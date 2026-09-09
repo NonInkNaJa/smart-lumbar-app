@@ -6,19 +6,44 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "ios": {
-      "supportsTablet": true
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
     },
     "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
-    },
+        "package": "com.nonink.smartlumbarapp",
+          "adaptiveIcon": {
+              "foregroundImage": "./assets/android-icon-foreground.png",
+                  "backgroundImage": "./assets/android-icon-background.png",
+                      "monochromeImage": "./assets/android-icon-monochrome.png"
+                        },
+                          "permissions": [
+                              "android.permission.BLUETOOTH",
+                                  "android.permission.BLUETOOTH_ADMIN",
+                                      "android.permission.BLUETOOTH_CONNECT"
+                                        ]
+                                        },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": true,
+          "modes": [
+            "peripheral",
+            "central"
+          ]
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f99f1edc-1e8b-4a82-ab86-cba3650efed5"
+      }
     }
   }
 }
