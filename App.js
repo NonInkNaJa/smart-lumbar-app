@@ -218,6 +218,7 @@ export default function App() {
             </View>
             <Text style={[styles.scoreText, { color: readiness.color }]}>{score}/100</Text>
             <Text style={[styles.tierLabel, { color: readiness.color }]}>{readiness.label}</Text>
+            <Text style={styles.demoLabel}>* ข้อมูลตัวอย่าง จะอัปเดตเป็นข้อมูลจริงหลังใช้งานต่อเนื่อง</Text>
             <Text style={styles.adviceText}>{readiness.advice}</Text>
 
             <View style={styles.barChartRow}>
@@ -258,48 +259,21 @@ export default function App() {
           {selfRating && <Text style={styles.savedText}>บันทึกแล้ว ✓</Text>}
         </View>
 
-        {/* แผนฝึกวันนี้ */}
+        {/* ท่ายืดเหยียดที่แนะนำวันนี้ */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <CalendarDays color="#2563EB" size={24} />
-            <Text style={styles.cardTitle}>แผนฝึกวันนี้</Text>
+            <Text style={styles.cardTitle}>ท่ายืดเหยียดที่แนะนำวันนี้</Text>
           </View>
-          <View style={styles.intensityRow}>
-            {[
-              { key: 'light', label: 'เบา' },
-              { key: 'medium', label: 'กลาง' },
-              { key: 'heavy', label: 'หนัก' },
-            ].map((opt) => (
-              <TouchableOpacity
-                key={opt.key}
-                style={[styles.intensityButton, plannedIntensity === opt.key && styles.intensityButtonSelected]}
-                onPress={() => handleSelectIntensity(opt.key)}
-              >
-                <Text style={[styles.intensityButtonText, plannedIntensity === opt.key && styles.intensityButtonTextSelected]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {adjustment && (
-            <View
-              style={[
-                styles.adjustmentBox,
-                { backgroundColor: adjustment.level === 'warn' ? '#FEE2E2' : adjustment.level === 'caution' ? '#FEF3C7' : '#D1FAE5' },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.adjustmentText,
-                  { color: adjustment.level === 'warn' ? '#EF4444' : adjustment.level === 'caution' ? '#D97706' : '#059669' },
-                ]}
-              >
-                {adjustment.message}
-              </Text>
+          {getRecommendedRoutine(tier).map((ex, i) => (
+            <View key={i} style={styles.exerciseRow}>
+              <Text style={styles.exerciseName}>• {ex.name}</Text>
+              {ex.detail && <Text style={styles.exerciseDetail}>{ex.detail}</Text>}
             </View>
-          )}
+          ))}
         </View>
-      </ScrollView>
+
+        </ScrollView>
     </SafeAreaView>
   );
 }
@@ -339,4 +313,8 @@ const styles = StyleSheet.create({
   intensityButtonTextSelected: { color: '#FFFFFF' },
   adjustmentBox: { padding: 10, borderRadius: 8, marginTop: 12 },
   adjustmentText: { fontSize: 13, fontWeight: '500' },
+  demoLabel: { fontSize: 11, color: "#9CA3AF", textAlign: "center", marginBottom: 12 },
+  exerciseRow: { paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
+  exerciseName: { fontSize: 15, color: "#374151", fontWeight: "500" },
+  exerciseDetail: { fontSize: 13, color: "#6B7280", marginLeft: 14, marginTop: 2 },
 });

@@ -52,3 +52,26 @@ export function getTrainingAdjustment(tier, plannedIntensity) {
   }
   return { level: 'ok', message: 'แผนฝึกวันนี้เหมาะสมกับสภาพร่างกายสัปดาห์นี้' };
 }
+export function getRecommendedRoutine(tier) {
+  const routines = {
+    low: [
+      { name: 'Cat-Cow', detail: '10 ครั้ง' },
+      { name: "World's Greatest Stretch", detail: '5 ครั้ง/ข้าง' },
+      { name: 'Glute Bridge', detail: '15 ครั้ง' },
+    ],
+    moderate: [
+      { name: "Child's Pose", detail: '30 วินาที' },
+      { name: 'Hip Flexor Stretch', detail: '30 วินาที/ข้าง' },
+      { name: 'Thoracic Extension (โฟมโรลเลอร์)', detail: '10 ครั้ง' },
+      { name: 'Cat-Cow', detail: '10 ครั้ง' },
+    ],
+    high: [
+      { name: "Child's Pose", detail: '60 วินาที' },
+      { name: '90/90 Hip Stretch', detail: '45 วินาที/ข้าง' },
+      { name: 'Prone Press-up (McKenzie)', detail: '10 ครั้ง' },
+      { name: 'Deep Breathing + Decompression Hang', detail: '30 วินาที' },
+      { name: '⚠️ หลีกเลี่ยงท่า loaded spinal flexion วันนี้' },
+    ],
+  };
+  return routines[tier] || [];
+}
