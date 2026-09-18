@@ -21,7 +21,7 @@ const DEVICE_NAME = 'SmartLumbarBelt';
 const SERVICE_UUID = '0000xxxx-0000-1000-8000-00805f9b34fb';
 const CHARACTERISTIC_UUID = '0000yyyy-0000-1000-8000-00805f9b34fb';
 
-const bleManager = new BleManager();
+let bleManager = null; try { bleManager = new BleManager(); } catch(e) { console.log("BleManager unavailable"); }
 
 function getTodayKey() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
