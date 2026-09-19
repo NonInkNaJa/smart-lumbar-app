@@ -5,7 +5,8 @@
 export const SLUMP_PITCH_THRESHOLD = 65; // pitch ต่ำกว่านี้ = เอนหลังไม่ดี (ตูดไม่ชิดเบาะ)
 export const HUNCH_ROLL_THRESHOLD = -100; // roll ต่ำกว่านี้ = หลังค่อม
 export const BAD_POSTURE_SECONDS = 10; // ท่าไม่ดีต่อเนื่องกี่วินาทีถึงจะเตือน
-export const SITTING_ALERT_MINUTES = 45; // นั่งต่อเนื่องกี่นาทีถึงจะเตือนให้ลุก
+export const DEFAULT_SITTING_ALERT_MINUTES = 45; // ค่าเริ่มต้น: นั่งต่อเนื่องกี่นาทีถึงจะเตือนให้ลุก (ผู้ใช้ปรับเองได้ในหน้าตั้งค่า)
+export const SITTING_ALERT_OPTIONS = [20, 30, 45, 60]; // ตัวเลือกในหน้าตั้งค่า (นาที)
 // ==========================================================
 
 export const APP_NAME_TH = 'หลังเทพ';
@@ -19,7 +20,7 @@ export const CHARACTERISTIC_UUID = '002cf995-2911-4bc5-9143-3991ef0d6cf6';
 export const FLUSH_INTERVAL_MS = 15 * 1000; // เขียนข้อมูลท่านั่งลงเครื่องทุกๆ 15 วินาที
 
 export const CHART_RANGES = [
+  { key: '1d', label: 'วันนี้' },
   { key: '7d', label: '7 วัน' },
-  { key: '4w', label: '4 สัปดาห์' },
-  { key: '6m', label: '6 เดือน' },
+  { key: 'mtd', label: 'เดือนนี้' },
 ];

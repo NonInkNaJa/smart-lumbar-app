@@ -48,11 +48,15 @@ async function fire(title, body) {
   }
 }
 
+// ข้อความแจ้งเตือน (เนื้อความเก็บประโยคเต็ม; หัวเรื่องบอกรายละเอียดสั้น ๆ กันประโยคยาวถูกตัดตอนเด้งป๊อปอัพ)
+export const BAD_POSTURE_MESSAGE = 'หลังเทพเตือนนะคะ ลองขยับท่านั่งนิดนึงน้า 😊';
+export const SITTING_TOO_LONG_MESSAGE = 'นั่งมานานละน้า ลุกยืดเส้นยืดสายกันหน่อยไหม 🙆';
+
 // label = ชนิดท่าไม่ดี เช่น "หลังค่อม" หรือ "เอนหลังไม่ดี (ตูดไม่ชิดเบาะ)"
 export function notifyBadPosture(label) {
-  return fire('ท่านั่งไม่ดี', `${label ? `${label} — ` : ''}ลองปรับท่าหรือยืดเหยียด`);
+  return fire(label ? `ท่านั่งไม่ดี: ${label}` : 'ท่านั่งไม่ดี', BAD_POSTURE_MESSAGE);
 }
 
 export function notifySittingTooLong() {
-  return fire('นั่งนานแล้ว', 'ควรลุกยืนหรือยืดเหยียด');
+  return fire('นั่งนานแล้ว', SITTING_TOO_LONG_MESSAGE);
 }

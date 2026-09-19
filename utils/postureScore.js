@@ -1,20 +1,84 @@
-export function calculateWeeklyScore(dailyData) {
-  const validDays = dailyData.filter((d) => d.hasData);
-  if (validDays.length === 0) return { score: null, tier: 'no-data' };
+// ===== ค่าที่ปรับได้ของคะแนนความพร้อม =====
+// คะแนน 0-100: ยิ่งสูง = ท่านั่งดี = พร้อมออกกำลังกาย (สูงขึ้นเมื่อนั่งท่าดีมาก, ต่ำลงเมื่อนั่งท่าไม่ดีมาก)
+export const RECENCY_DECAY = 0.85; // วันเก่าลงไปทีละวัน น้ำหนักลดเหลือ 85% ของวันถัดมา
+export const PRIOR_SECONDS = 3600; // เติมข้อมูล "สมมติ" ท่าดี 50/50 รวม 1 ชั่วโมงเสมอ: ข้อมูลน้อย = คะแนนเข้าใกล้ 50, ข้อมูลมาก = คะแนนสะท้อนความจริง
+export const READY_MIN_SCORE = 70; // คะแนน >= นี้ = พร้อม (tier 'low', สีเขียว)
+export const CAUTION_MIN_SCORE = 45; // คะแนน >= นี้ = ควรวอร์มอัพเพิ่ม (tier 'moderate', สีเหลือง) ต่ำกว่านี้ = ควรพักฟื้น (tier 'high', สีแดง)
+export const LOW_DATA_SECONDS = 3600; // ข้อมูลรวมน้อยกว่านี้ ถือว่า "ข้อมูลยังน้อย" (ใช้แสดงข้อความเตือนว่าคะแนนยังไม่แม่น)
+// Self-report (วันนี้หลังตึงแค่ไหน 1-5): ตึงมาก (1-2) หักคะแนนความพร้อมของวันนั้น; 3 (เฉยๆ), 4-5 (สบายดี) และไม่ได้กรอก = ไม่ปรับ
+export const SELF_REPORT_STRAINED_MAX = 2; // รายงาน <= นี้ = ตึงมาก
+export const SELF_REPORT_PENALTY = 10; // หักกี่คะแนน (ไม่ต่ำกว่า 0)
+// ==========================================
 
-  let weightedSum = 0;
-  let weightTotal = 0;
-  validDays.forEach((day, index) => {
-    const daysFromToday = validDays.length - 1 - index;
-    const weight = Math.pow(0.85, daysFromToday);
-    weightedSum += day.badPostureRatio * weight;
-    weightTotal += weight;
+function tierFromScore(score) {
+  return score >= READY_MIN_SCORE ? 'low' : score >= CAUTION_MIN_SCORE ? 'moderate' : 'high';
+}
+
+function penaltyFor(selfRating) {
+  return selfRating >= 1 && selfRating <= SELF_REPORT_STRAINED_MAX ? SELF_REPORT_PENALTY : 0;
+}
+
+// คะแนนจากเซนเซอร์ล้วน 0-100 (ยังไม่หัก self-report): สัดส่วนท่าดีถ่วงด้วยข้อมูลสมมติ 50/50
+// ระยะเวลาที่นั่งจริงยิ่งมาก ยิ่งกลบค่าสมมติ (ข้อมูลน้อยจะเข้าใกล้ 50 ไม่ใช่ 100 หรือ 0)
+function sensorScoreOf(goodSeconds, badSeconds) {
+  return ((goodSeconds + PRIOR_SECONDS / 2) / (goodSeconds + badSeconds + PRIOR_SECONDS)) * 100;
+}
+
+// คะแนนความพร้อมของ "วันเดียว" (ใช้กับแท่งกราฟ): คะแนนเซนเซอร์ แล้วหักตาม self-report ของวันนั้น
+// day: { hasData, goodSeconds, badSeconds, selfRating? } -- วันที่ไม่มีข้อมูลเซนเซอร์ ไม่มีคะแนน (ไม่มีอะไรให้หัก)
+export function calculateDayScore(day) {
+  if (!day.hasData) return { score: null, sensorScore: null, penalty: 0, tier: 'no-data' };
+  const sensor = sensorScoreOf(day.goodSeconds || 0, day.badSeconds || 0);
+  const penalty = penaltyFor(day.selfRating);
+  const score = Math.round(Math.max(0, sensor - penalty));
+  return { score, sensorScore: Math.round(sensor), penalty, tier: tierFromScore(score) };
+}
+
+// ใส่คะแนนรายวัน (หลังหัก self-report แล้ว) ให้แต่ละแท่งกราฟ; selfReportLog = { 'YYYY-MM-DD': 1-5 }
+export function applyDayScores(series, selfReportLog = {}) {
+  return series.map((bucket) => {
+    const selfRating = (bucket.dateKey && selfReportLog[bucket.dateKey]) || null;
+    return { ...bucket, selfRating, ...calculateDayScore({ ...bucket, selfRating }) };
+  });
+}
+
+// dailyData: [{ hasData, goodSeconds, badSeconds, selfRating? }] เรียงจากเก่า -> ใหม่ (วันล่าสุดอยู่ท้ายสุด)
+// tier ใช้ชื่อเดิม (low/moderate/high) หมายถึง "ระดับความเสี่ยง": low = เสี่ยงต่ำ = พร้อมดี, high = เสี่ยงสูง = ควรพักฟื้น
+export function calculateWeeklyScore(dailyData) {
+  let goodWeighted = 0;
+  let badWeighted = 0;
+  let trackedSeconds = 0;
+  let penaltyWeighted = 0;
+  let weightSum = 0;
+
+  dailyData.forEach((day, index) => {
+    if (!day.hasData) return;
+    const good = day.goodSeconds || 0;
+    const bad = day.badSeconds || 0;
+    const weight = Math.pow(RECENCY_DECAY, dailyData.length - 1 - index); // วันที่จริง ไม่ใช่ลำดับของวันที่มีข้อมูล
+    goodWeighted += good * weight;
+    badWeighted += bad * weight;
+    trackedSeconds += good + bad;
+    penaltyWeighted += penaltyFor(day.selfRating) * weight;
+    weightSum += weight;
   });
 
-  const score = Math.round((weightedSum / weightTotal) * 100);
-  const tier = score < 30 ? 'low' : score < 55 ? 'moderate' : 'high';
+  if (trackedSeconds === 0) return { score: null, tier: 'no-data', trackedSeconds: 0, lowData: false, sensorScore: null, adjustment: 0 };
 
-  return { score, tier };
+  // คะแนนเซนเซอร์ทั้งสัปดาห์ (ถ่วงวันล่าสุดมากกว่า + ถ่วงระยะเวลาที่นั่ง) แล้วหักตามสัดส่วนวันที่รายงานว่าตึงมาก
+  // (ถ่วงน้ำหนักวันล่าสุดมากกว่าเช่นกัน: ตึงทุกวัน = หักเต็ม 10, ตึงวันเดียวจาก 7 วัน = หักน้อยกว่า)
+  const sensor = sensorScoreOf(goodWeighted, badWeighted);
+  const score = Math.round(Math.max(0, sensor - penaltyWeighted / weightSum));
+  const sensorScore = Math.round(sensor);
+
+  return {
+    score,
+    tier: tierFromScore(score),
+    trackedSeconds,
+    lowData: trackedSeconds < LOW_DATA_SECONDS,
+    sensorScore,
+    adjustment: sensorScore - score, // จำนวนคะแนนที่ถูกหักเพราะ self-report (0 = ไม่มีการหัก)
+  };
 }
 
 export function getReadinessMessage(tier) {

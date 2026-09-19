@@ -4,9 +4,9 @@
 // key ของแต่ละวันคือวันที่ตามเวลาเครื่อง (ไม่ใช่ UTC) เช่น "2026-09-19"
 
 export const MIN_TRACKED_SECONDS = 60; // มีข้อมูลน้อยกว่านี้ในช่วงนั้น ถือว่า "ยังไม่มีข้อมูล"
+export const GOOD_DAY_MAX_BAD_RATIO = 0.3; // วันที่นั่งท่าไม่ดีต่ำกว่า 30% ของเวลา = "วันดี" (ใช้นับ streak)
 
 const THAI_WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
-const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 
 export function getLocalDateKey(date = new Date()) {
   const y = date.getFullYear();
@@ -37,6 +37,7 @@ function summarize(label, keys, recordsByKey) {
   const total = good + bad;
   return {
     label,
+    dateKey: keys.length === 1 ? keys[0] : null, // แท่งของวันเดียว: ใช้จับคู่กับ self-report ของวันนั้น
     hasData: total >= MIN_TRACKED_SECONDS,
     badPostureRatio: total > 0 ? bad / total : 0, // สัดส่วนเวลาที่นั่งท่าไม่ดี 0-1
     goodSeconds: good,
@@ -51,51 +52,53 @@ function lastNDays(today, n) {
   return out;
 }
 
-function firstDayOfMonthsAgo(today, monthsAgo) {
-  return new Date(today.getFullYear(), today.getMonth() - monthsAgo, 1);
+// ตั้งแต่วันที่ 1 ของเดือนถึงวันนี้
+function monthToDate(today) {
+  const out = [];
+  for (let d = new Date(today.getFullYear(), today.getMonth(), 1); d <= today; d = addDays(d, 1)) out.push(d);
+  return out;
 }
 
-// range: '7d' = 7 วันล่าสุดรายวัน, '4w' = 4 สัปดาห์ล่าสุดรายสัปดาห์, '6m' = 6 เดือนล่าสุดรายเดือน
-export function keysNeeded(range, today = new Date()) {
-  if (range === '7d') return lastNDays(today, 7).map(getLocalDateKey);
-  if (range === '4w') return lastNDays(today, 28).map(getLocalDateKey);
-  if (range === '6m') {
-    const start = firstDayOfMonthsAgo(today, 5);
-    const keys = [];
-    for (let d = start; d <= today; d = addDays(d, 1)) keys.push(getLocalDateKey(d));
-    return keys;
-  }
+function daysOfRange(range, today) {
+  if (range === '1d') return [today];
+  if (range === '7d') return lastNDays(today, 7);
+  if (range === 'mtd') return monthToDate(today);
   return [];
+}
+
+// range: '1d' = วันนี้, '7d' = 7 วันล่าสุด, 'mtd' = ต้นเดือนถึงวันนี้ (แท่งละวัน)
+export function keysNeeded(range, today = new Date()) {
+  return daysOfRange(range, today).map(getLocalDateKey);
 }
 
 export function buildSeries(range, recordsByKey, today = new Date()) {
-  if (range === '7d') {
-    return lastNDays(today, 7).map((d) => summarize(THAI_WEEKDAYS[d.getDay()], [getLocalDateKey(d)], recordsByKey));
-  }
-
-  if (range === '4w') {
-    const days = lastNDays(today, 28);
-    const series = [];
-    for (let w = 0; w < 4; w++) {
-      const group = days.slice(w * 7, w * 7 + 7);
-      const start = group[0];
-      series.push(summarize(`${start.getDate()}/${start.getMonth() + 1}`, group.map(getLocalDateKey), recordsByKey));
-    }
-    return series;
-  }
-
-  if (range === '6m') {
-    const series = [];
-    for (let i = 5; i >= 0; i--) {
-      const first = firstDayOfMonthsAgo(today, i);
-      const keys = [];
-      for (let d = first; d.getMonth() === first.getMonth() && d <= today; d = addDays(d, 1)) {
-        keys.push(getLocalDateKey(d));
-      }
-      series.push(summarize(THAI_MONTHS[first.getMonth()], keys, recordsByKey));
-    }
-    return series;
-  }
-
+  const days = daysOfRange(range, today);
+  if (range === '1d') return [summarize('วันนี้', [getLocalDateKey(today)], recordsByKey)];
+  if (range === '7d') return days.map((d) => summarize(THAI_WEEKDAYS[d.getDay()], [getLocalDateKey(d)], recordsByKey));
+  if (range === 'mtd') return days.map((d) => summarize(String(d.getDate()), [getLocalDateKey(d)], recordsByKey));
   return [];
+}
+
+// key ของ n วันล่าสุด (สำหรับโหลดข้อมูลมาคิด streak)
+export function keysForLastDays(n, today = new Date()) {
+  return lastNDays(today, n).map(getLocalDateKey);
+}
+
+function isGoodDay(record, maxBadRatio) {
+  if (!record) return false;
+  const good = record.goodSeconds || 0;
+  const bad = record.badSeconds || 0;
+  const total = good + bad;
+  return total >= MIN_TRACKED_SECONDS && bad / total < maxBadRatio;
+}
+
+// streak = จำนวน "วันดี" ที่ต่อเนื่องกันไม่ขาดตอน นับถอยหลังจากวันนี้
+// วันนี้ยังไม่จบ: ถ้าวันนี้ยังไม่ใช่วันดี (ยังไม่มีข้อมูล/ยังนั่งท่าไม่ดีเยอะ) จะไม่ตัด streak ของเมื่อวาน แค่ยังไม่นับวันนี้
+// วันที่ไม่มีข้อมูล (ไม่ได้ใส่เข็มขัด) ถือว่าขาดตอน
+export function computeStreak(recordsByKey, today = new Date(), maxBadRatio = GOOD_DAY_MAX_BAD_RATIO) {
+  let streak = isGoodDay(recordsByKey[getLocalDateKey(today)], maxBadRatio) ? 1 : 0;
+  for (let d = addDays(today, -1); isGoodDay(recordsByKey[getLocalDateKey(d)], maxBadRatio); d = addDays(d, -1)) {
+    streak++;
+  }
+  return streak;
 }

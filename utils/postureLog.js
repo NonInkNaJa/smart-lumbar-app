@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getLocalDateKey, emptyDay, keysNeeded, buildSeries } from './postureStats';
+import { getLocalDateKey, emptyDay, keysNeeded, keysForLastDays, buildSeries, computeStreak } from './postureStats';
 
 const KEY_PREFIX = 'posture-log-'; // เช่น "posture-log-2026-09-19"
 
@@ -65,9 +65,8 @@ export function flushPostureLog() {
 }
 
 // อ่านข้อมูลจริงมาสร้างชุดข้อมูลกราฟ (รวมค่าที่ยังไม่ได้เขียนลงดิสก์ด้วย)
-// range: '7d' | '4w' | '6m'
-export async function loadSeries(range, today = new Date()) {
-  const keys = keysNeeded(range, today);
+// อ่านข้อมูลรายวันตาม key ที่ต้องการ รวมค่าที่ยังไม่ได้เขียนลงดิสก์ด้วย
+async function readRecords(keys) {
   const pairs = await AsyncStorage.multiGet(keys.map((k) => KEY_PREFIX + k));
 
   const recordsByKey = {};
@@ -87,5 +86,21 @@ export async function loadSeries(range, today = new Date()) {
     recordsByKey[k] = merged;
   });
 
+  return recordsByKey;
+}
+
+// range: '1d' (วันนี้) | '7d' (7 วันล่าสุด) | 'mtd' (ต้นเดือนถึงวันนี้)
+export async function loadSeries(range, today = new Date()) {
+  const recordsByKey = await readRecords(keysNeeded(range, today));
   return buildSeries(range, recordsByKey, today);
+}
+
+// จำนวนวันดีติดต่อกัน (streak) จากข้อมูลจริง: โหลดย้อนหลัง 30 วันก่อน ถ้าดีเกือบเต็มช่วงจึงขยายเป็น 400 วัน
+export async function loadStreak(today = new Date()) {
+  let days = 30;
+  for (;;) {
+    const streak = computeStreak(await readRecords(keysForLastDays(days, today)), today);
+    if (streak < days - 1 || days >= 400) return streak;
+    days = 400;
+  }
 }

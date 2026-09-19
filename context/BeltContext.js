@@ -6,12 +6,12 @@ import {
   SERVICE_UUID,
   CHARACTERISTIC_UUID,
   BAD_POSTURE_SECONDS,
-  SITTING_ALERT_MINUTES,
   FLUSH_INTERVAL_MS,
 } from '../config';
-import { calculateWeeklyScore, getReadinessMessage } from '../utils/postureScore';
+import { DEFAULT_SETTINGS, loadSettings, saveSettings, sanitizeSettings } from '../utils/settings';
+import { applyDayScores, calculateWeeklyScore, getReadinessMessage } from '../utils/postureScore';
 import { getLocalDateKey } from '../utils/postureStats';
-import { recordPostureSample, flushPostureLog, loadSeries } from '../utils/postureLog';
+import { recordPostureSample, flushPostureLog, loadSeries, loadStreak } from '../utils/postureLog';
 import { saveSelfReport, getSelfReportLog } from '../utils/storage';
 import { parseTiltPayload } from '../utils/tilt';
 import { getPostureStatus } from '../utils/posture';
@@ -33,7 +33,20 @@ export function useBelt() {
 export function BeltProvider({ children }) {
   const [connectionState, setConnectionState] = useState('disconnected');
   const [sittingTime, setSittingTime] = useState(0); // หน่วย: นาที
-  const [isAlert, setIsAlert] = useState(false); // เตือนนั่งนาน
+  // การตั้งค่าของผู้ใช้ (เวลาเตือนนั่งนาน, dark mode) เก็บใน AsyncStorage; settingsReady = โหลดเสร็จแล้ว
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [settingsReady, setSettingsReady] = useState(false);
+  const settingsRef = useRef(DEFAULT_SETTINGS);
+  const updateSettings = (patch) => {
+    const next = sanitizeSettings({ ...settingsRef.current, ...patch });
+    settingsRef.current = next;
+    setSettings(next);
+    saveSettings(next);
+  };
+  const [isPaused, setIsPaused] = useState(false); // ผู้ใช้กด "หยุดชั่วคราว" (ยังเชื่อมต่อ Bluetooth อยู่) รีเซ็ตเป็น false ทุกครั้งที่ไม่ได้เชื่อมต่อ
+  const isPausedRef = useRef(false); // ให้ callback ของ Bluetooth (ผูกไว้ตอนเชื่อมต่อ) เห็นค่าล่าสุด
+  isPausedRef.current = isPaused;
+  const sittingSecondsRef = useRef(0); // นับเป็นวินาทีเพื่อไม่ให้เศษนาทีหายตอนหยุด/เริ่มต่อ
   const [errorMsg, setErrorMsg] = useState(null);
   const connectedDeviceRef = useRef(null);
   const tiltSubscriptionRef = useRef(null);
@@ -46,7 +59,8 @@ export function BeltProvider({ children }) {
   const [weekData, setWeekData] = useState([]);
   const [chartRange, setChartRange] = useState('7d');
   const [chartData, setChartData] = useState([]);
-  const { score, tier } = calculateWeeklyScore(weekData);
+  const [streak, setStreak] = useState(0); // จำนวนวันดี (ท่าไม่ดี < 30%) ติดต่อกัน
+  const { score, tier, lowData, adjustment } = calculateWeeklyScore(weekData);
   const readiness = getReadinessMessage(tier);
 
   const [selfRating, setSelfRating] = useState(null);
@@ -55,12 +69,20 @@ export function BeltProvider({ children }) {
   const isConnected = connectionState === 'connected';
   const isConnecting = connectionState === 'connecting';
 
+  // เตือนนั่งนาน = นั่งต่อเนื่องถึงเวลาที่ผู้ใช้ตั้งไว้ (คำนวณจากเวลานั่งเทียบกับค่าที่ตั้งเสมอ
+  // จึงปรับค่าตอนกำลังนั่งอยู่แล้วมีผลทันที และหลุดการเชื่อมต่อ = เวลานั่งเป็น 0 = ไม่เตือน)
+  const isAlert = isConnected && sittingTime >= settings.sittingAlertMinutes;
+
   const chartRangeRef = useRef('7d'); // ค่าล่าสุดของ chartRange สำหรับ callback ที่ผูกไว้ตอนเชื่อมต่อ (กัน closure ค้างค่าเก่า)
   chartRangeRef.current = chartRange;
 
   // ---------- ตอนเปิดแอป ----------
   useEffect(() => {
     (async () => {
+      const loaded = await loadSettings();
+      settingsRef.current = loaded;
+      setSettings(loaded);
+      setSettingsReady(true);
       const reportLog = await getSelfReportLog();
       if (reportLog[todayKey]) setSelfRating(reportLog[todayKey]);
     })();
@@ -68,31 +90,35 @@ export function BeltProvider({ children }) {
   }, []);
 
   // ---------- ตัวจับเวลานั่ง ----------
+  // นับอัตโนมัติทันทีที่เชื่อมต่อ; หยุดนับเฉพาะตอนผู้ใช้กด "หยุดชั่วคราว" (isPaused) ค่าที่นับไว้ไม่หาย
   useEffect(() => {
-    if (!isConnected) return undefined;
-    // sittingTime เก็บเป็นนาที: เพิ่ม 1 ทุกๆ 60 วินาที
+    if (!isConnected || isPaused) return undefined;
+    // sittingTime เก็บเป็นนาที (เพิ่ม 1 ทุกครบ 60 วินาทีที่นับจริง โดยนับสะสมเป็นวินาทีข้ามช่วงที่หยุด)
     const id = setInterval(() => {
-      setSittingTime((prev) => {
-        const nextTime = prev + 1;
-        if (nextTime >= SITTING_ALERT_MINUTES) setIsAlert(true);
-        return nextTime;
-      });
-    }, 60 * 1000);
+      sittingSecondsRef.current += 1;
+      const minutes = Math.floor(sittingSecondsRef.current / 60);
+      setSittingTime((prev) => (prev === minutes ? prev : minutes));
+    }, 1000);
     return () => clearInterval(id);
-  }, [isConnected]);
+  }, [isConnected, isPaused]);
 
-  // หลุด/ตัดการเชื่อมต่อด้วยเหตุใดก็ตาม: เริ่มนับเวลานั่งใหม่และเคลียร์เตือน (รอบเชื่อมต่อหน้าจะเตือนได้อีก)
+  // หลุด/ตัดการเชื่อมต่อด้วยเหตุใดก็ตาม: เริ่มนับเวลานั่งใหม่ เคลียร์เตือน และยกเลิกการหยุดชั่วคราว
+  // (รอบเชื่อมต่อหน้ากลับมานับอัตโนมัติและเตือนได้อีก)
   useEffect(() => {
     if (!isConnected) {
+      sittingSecondsRef.current = 0;
       setSittingTime(0);
-      setIsAlert(false);
+      setIsPaused(false);
     }
   }, [isConnected]);
 
+  const togglePause = () => setIsPaused((p) => !p);
+
   // ---------- เตือนท่านั่งไม่ดี ----------
   // ผิดท่าต่อเนื่อง BAD_POSTURE_SECONDS วินาทีถึงจะเตือน; กลับมาท่าดีเมื่อไหร่เตือนหายและเริ่มนับใหม่
+  // ตอนหยุดชั่วคราว (ลุกไปประชุม/กินข้าว) ไม่ตรวจท่านั่ง: ถือว่าไม่ได้นั่ง
   useEffect(() => {
-    const status = getPostureStatus(tilt);
+    const status = getPostureStatus(isPaused ? null : tilt);
     if (!status.isBadPosture) {
       badPostureSinceRef.current = null;
       setPostureAlert(null);
@@ -103,7 +129,7 @@ export function BeltProvider({ children }) {
     if (now - badPostureSinceRef.current >= BAD_POSTURE_SECONDS * 1000) {
       setPostureAlert(status.label);
     }
-  }, [tilt]);
+  }, [tilt, isPaused]);
 
   // ยิงแจ้งเตือนป๊อปอัพ "ครั้งเดียวต่อรอบ": ทำงานเฉพาะตอนสถานะเปลี่ยนจากไม่เตือน -> เตือน
   // (postureAlert หายเมื่อกลับมาท่าดี แล้วเตือนรอบใหม่จึงจะยิงอีกครั้ง; isAlert รีเซ็ตเมื่อหลุดการเชื่อมต่อ)
@@ -120,9 +146,11 @@ export function BeltProvider({ children }) {
   const refreshHistory = async () => {
     try {
       const range = chartRangeRef.current;
-      const week = await loadSeries('7d');
+      const selfReports = await getSelfReportLog(); // คะแนนรายวันต้องหักตาม self-report ของวันนั้น ๆ
+      const week = applyDayScores(await loadSeries('7d'), selfReports);
       setWeekData(week);
-      setChartData(range === '7d' ? week : await loadSeries(range));
+      setChartData(range === '7d' ? week : applyDayScores(await loadSeries(range), selfReports));
+      setStreak(await loadStreak());
     } catch (e) {
       console.log('โหลดประวัติท่านั่งไม่สำเร็จ', e);
     }
@@ -230,7 +258,8 @@ export function BeltProvider({ children }) {
               const parsed = parseTiltPayload(characteristic?.value);
               if (parsed) {
                 setTilt(parsed);
-                recordPostureSample(getPostureStatus(parsed)); // นับเวลาท่าดี/ไม่ดีลงบันทึกรายวัน
+                // นับเวลาท่าดี/ไม่ดีลงบันทึกรายวัน (ข้ามตอนหยุดชั่วคราว: ไม่ได้นั่งอยู่ ไม่ให้ประวัติเพี้ยน)
+                if (!isPausedRef.current) recordPostureSample(getPostureStatus(parsed));
               }
             }
           );
@@ -251,7 +280,6 @@ export function BeltProvider({ children }) {
     }
     setConnectionState('disconnected');
     setSittingTime(0);
-    setIsAlert(false);
   };
 
   const toggleConnection = () => (isConnected ? disconnect() : connect());
@@ -262,6 +290,7 @@ export function BeltProvider({ children }) {
   const saveRating = async (rating) => {
     setSelfRating(rating);
     await saveSelfReport(todayKey, rating);
+    await refreshHistory(); // self-report มีผลต่อคะแนนและกราฟ: คำนวณใหม่ทันที
   };
 
   const value = {
@@ -277,13 +306,22 @@ export function BeltProvider({ children }) {
     postureAlert,
     sittingTime,
     isAlert,
+    isPaused,
+    togglePause,
+    // การตั้งค่า
+    settings,
+    settingsReady,
+    updateSettings,
     // ประวัติ + คะแนน
+    streak,
     weekData,
     chartRange,
     setChartRange,
     chartData,
     score,
     tier,
+    lowData,
+    adjustment,
     readiness,
     // self-report
     selfRating,

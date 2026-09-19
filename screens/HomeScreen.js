@@ -1,14 +1,20 @@
-import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Activity, Bluetooth, CalendarDays, Clock } from 'lucide-react-native';
+import { Activity, Bluetooth, CalendarDays, Clock, Flame, HeartPulse, Pause, Play } from 'lucide-react-native';
 import { APP_NAME_TH, APP_NAME_EN } from '../config';
 import { useBelt } from '../context/BeltContext';
 import { getRecommendedRoutine } from '../utils/postureScore';
-import { AlertBox, Button, Card, CardHeader, COLORS, ScreenTitle, screenStyles } from '../components/ui';
+import { AlertBox, Button, Card, CardHeader, COLORS, IconBadge, ScreenTitle, useScreenStyles } from '../components/ui';
+import { useTheme } from '../components/theme';
+
+const RATING_EMOJIS = ['😖', '😕', '😐', '🙂', '😄'];
 
 export default function HomeScreen() {
   const {
+    streak,
+    selfRating,
+    saveRating,
     isConnected,
     isConnecting,
     errorMsg,
@@ -16,15 +22,30 @@ export default function HomeScreen() {
     connectLabel,
     sittingTime,
     isAlert,
+    isPaused,
+    togglePause,
     tilt,
     postureAlert,
     tier,
   } = useBelt();
+  const theme = useTheme();
+  const screen = useScreenStyles();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
 
   return (
-    <SafeAreaView style={screenStyles.container} edges={['top']}>
-      <ScrollView contentContainerStyle={screenStyles.scrollContent}>
+    <SafeAreaView style={screen.container} edges={['top']}>
+      <ScrollView contentContainerStyle={screen.scrollContent}>
         <ScreenTitle title={APP_NAME_TH} subtitle={APP_NAME_EN} />
+
+        {/* Streak: วันดี (นั่งท่าไม่ดีต่ำกว่า 30% ของเวลา) ติดต่อกัน; ยังเป็น 0 ไม่โชว์ตัวเลข ให้กำลังใจแทน */}
+        <Card>
+          <View style={styles.streakRow}>
+            <IconBadge Icon={Flame} color={streak > 0 ? COLORS.orange : COLORS.slate} box={44} size={24} active={streak > 0} />
+            <Text style={[styles.streakText, streak === 0 && styles.streakTextEmpty]}>
+              {streak > 0 ? `ท่านั่งดีต่อเนื่อง ${streak} วันแล้ว 🔥` : 'เริ่มสะสมวันท่านั่งดีกันเลย! วันนี้นั่งให้ตรงๆ แล้วมาลุ้น streak แรกกัน 💪'}
+            </Text>
+          </View>
+        </Card>
 
         {/* การเชื่อมต่อ */}
         <Card>
@@ -43,8 +64,25 @@ export default function HomeScreen() {
 
         {/* เวลานั่ง */}
         <Card>
-          <CardHeader Icon={Clock} color={COLORS.blue} title="ระยะเวลานั่งต่อเนื่อง" />
-          <Text style={styles.timerText}>{sittingTime} นาที</Text>
+          <View style={styles.timerHeaderRow}>
+            <View style={styles.timerHeaderTitle}>
+              <CardHeader Icon={Clock} color={COLORS.blue} title="ระยะเวลานั่งต่อเนื่อง" />
+            </View>
+            {/* ปุ่มเสริม: หยุดนับชั่วคราวโดยไม่ตัด Bluetooth (ค่าเริ่มต้นยังนับอัตโนมัติทันทีที่เชื่อมต่อ) */}
+            {isConnected && (
+              <TouchableOpacity
+                style={[styles.pauseButton, isPaused && styles.resumeButton]}
+                onPress={togglePause}
+              >
+                {isPaused ? <Play color="#FFFFFF" size={14} /> : <Pause color="#FFFFFF" size={14} />}
+                <Text style={styles.pauseButtonText}>{isPaused ? 'เริ่มนับต่อ' : 'หยุดชั่วคราว'}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <Text style={[styles.timerText, isPaused && styles.timerTextPaused]}>{sittingTime} นาที</Text>
+          {isPaused && (
+            <Text style={styles.pausedCaption}>หยุดนับชั่วคราว (ยังเชื่อมต่ออยู่) กด "เริ่มนับต่อ" เมื่อกลับมานั่ง</Text>
+          )}
           {isAlert && <AlertBox text="นั่งนานเกินกำหนด! ควรยืดกล้ามเนื้อ" />}
         </Card>
 
@@ -67,6 +105,7 @@ export default function HomeScreen() {
               {isConnected ? 'กำลังรอข้อมูลจากเข็มขัด...' : 'เชื่อมต่อเข็มขัดเพื่อดูมุมเอียง'}
             </Text>
           )}
+          {isPaused && <Text style={styles.tiltPlaceholder}>หยุดตรวจท่านั่งชั่วคราว (ไม่บันทึก ไม่เตือน)</Text>}
           {postureAlert && <AlertBox text={`ท่านั่งไม่ดี: ${postureAlert}`} />}
         </Card>
 
@@ -83,21 +122,59 @@ export default function HomeScreen() {
             <Text style={styles.tiltPlaceholder}>สวมเข็มขัดสักระยะ แล้วแอปจะแนะนำท่ายืดเหยียดให้ตามข้อมูลของคุณ</Text>
           )}
         </Card>
+
+        {/* Self-report: มีผลต่อคะแนนความพร้อมของวันนี้ (ตึงมาก 😖😕 หักคะแนน) */}
+        <Card>
+          <CardHeader Icon={HeartPulse} color={COLORS.red} title="วันนี้หลังตึงแค่ไหน?" />
+          <View style={styles.ratingRow}>
+            {RATING_EMOJIS.map((emoji, i) => {
+              const value = i + 1;
+              return (
+                <TouchableOpacity
+                  key={value}
+                  style={[styles.ratingButton, selfRating === value && styles.ratingButtonSelected]}
+                  onPress={() => saveRating(value)}
+                >
+                  <Text style={styles.ratingEmoji}>{emoji}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {selfRating && <Text style={styles.savedText}>บันทึกแล้ว ✓</Text>}
+          <Text style={styles.ratingHint}>ถ้าเลือก 😖 หรือ 😕 (ตึงมาก) จะหักคะแนนความพร้อมของวันนี้ 10 คะแนน</Text>
+        </Card>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  statusText: { fontSize: 16, fontWeight: '500', marginBottom: 12 },
-  errorText: { fontSize: 13, color: COLORS.red, marginBottom: 8 },
-  timerText: { fontSize: 36, fontWeight: 'bold', color: '#1D4ED8', textAlign: 'center', marginVertical: 10 },
-  tiltRow: { flexDirection: 'row', justifyContent: 'space-around' },
-  tiltItem: { alignItems: 'center' },
-  tiltValue: { fontSize: 32, fontWeight: 'bold', color: '#1D4ED8' },
-  tiltLabel: { fontSize: 13, color: '#6B7280', marginTop: 2 },
-  tiltPlaceholder: { fontSize: 14, color: '#9CA3AF', textAlign: 'center', paddingVertical: 8 },
-  exerciseRow: { paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  exerciseName: { fontSize: 15, color: '#374151', fontWeight: '500' },
-  exerciseDetail: { fontSize: 13, color: '#6B7280', marginLeft: 14, marginTop: 2 },
-});
+const makeStyles = (t) =>
+  StyleSheet.create({
+    statusText: { fontSize: 16, fontWeight: '500', marginBottom: 12 },
+    errorText: { fontSize: 13, color: COLORS.red, marginBottom: 8 },
+    timerText: { fontSize: 36, fontWeight: 'bold', color: t.number, textAlign: 'center', marginVertical: 10 },
+    streakRow: { flexDirection: 'row', alignItems: 'center' },
+    streakText: { flex: 1, marginLeft: 12, fontSize: 17, fontWeight: '700', color: t.text },
+    streakTextEmpty: { fontSize: 14, fontWeight: '500', color: t.muted },
+    timerHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+    timerHeaderTitle: { flex: 1 },
+    pauseButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.amber, borderRadius: 16, paddingVertical: 6, paddingHorizontal: 12, marginLeft: 8 },
+    resumeButton: { backgroundColor: COLORS.green },
+    pauseButtonText: { color: '#FFFFFF', fontWeight: '600', fontSize: 13, marginLeft: 6 },
+    timerTextPaused: { color: t.faint },
+    pausedCaption: { fontSize: 12, color: t.faint, textAlign: 'center', marginBottom: 4 },
+    tiltRow: { flexDirection: 'row', justifyContent: 'space-around' },
+    tiltItem: { alignItems: 'center' },
+    tiltValue: { fontSize: 32, fontWeight: 'bold', color: t.number },
+    tiltLabel: { fontSize: 13, color: t.muted, marginTop: 2 },
+    tiltPlaceholder: { fontSize: 14, color: t.faint, textAlign: 'center', paddingVertical: 8 },
+    ratingRow: { flexDirection: 'row', justifyContent: 'space-between' },
+    ratingButton: { padding: 10, borderRadius: 8, backgroundColor: t.surface },
+    ratingButtonSelected: { backgroundColor: t.selected },
+    ratingEmoji: { fontSize: 24 },
+    savedText: { fontSize: 13, color: COLORS.green, textAlign: 'center', marginTop: 10 },
+    ratingHint: { fontSize: 12, color: t.faint, textAlign: 'center', marginTop: 10 },
+    exerciseRow: { paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: t.border },
+    exerciseName: { fontSize: 15, color: t.text2, fontWeight: '500' },
+    exerciseDetail: { fontSize: 13, color: t.muted, marginLeft: 14, marginTop: 2 },
+  });
