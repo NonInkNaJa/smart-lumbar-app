@@ -19,6 +19,25 @@ import {
 } from './utils/storage';
 import { parseTiltPayload } from './utils/tilt';
 
+// ===== เกณฑ์ตรวจท่านั่ง (ปรับตรงนี้ได้ถ้าต้องจูนทีหลัง) =====
+// ค่าอ้างอิงที่วัดจริงจากเข็มขัด (pitch, roll เป็นองศา):
+//   ดี:      หลังตรงไม่พิง 85/-50, หลังตรงพิงพนัก 75/25
+//   ไม่ดี:   หลังค่อม 85/-140..-150, เอนหลังตูดไม่ชิดเบาะ 50-55/25-30
+const SLUMP_PITCH_THRESHOLD = 65; // pitch ต่ำกว่านี้ = เอนหลังไม่ดี (ตูดไม่ชิดเบาะ)
+const HUNCH_ROLL_THRESHOLD = -100; // roll ต่ำกว่านี้ = หลังค่อม
+const BAD_POSTURE_SECONDS = 10; // ท่าไม่ดีต่อเนื่องกี่วินาทีถึงจะเตือน
+
+function getPostureStatus(tilt) {
+  if (!tilt) return { isHunched: false, isSlumped: false, isBadPosture: false, label: null };
+  const isHunched = tilt.roll < HUNCH_ROLL_THRESHOLD;
+  const isSlumped = tilt.pitch < SLUMP_PITCH_THRESHOLD;
+  const labels = [];
+  if (isHunched) labels.push('หลังค่อม');
+  if (isSlumped) labels.push('เอนหลังไม่ดี (ตูดไม่ชิดเบาะ)');
+  return { isHunched, isSlumped, isBadPosture: isHunched || isSlumped, label: labels.join(' + ') };
+}
+// ==========================================================
+
 const DEVICE_NAME = 'SmartLumbarBelt';
 // ต้องตรงกับ firmware/smart_lumbar_belt/smart_lumbar_belt.ino
 const SERVICE_UUID = 'd5e630c8-e528-468a-a3ec-9386004b4327';
@@ -38,6 +57,8 @@ export default function App() {
   const connectedDeviceRef = useRef(null);
   const tiltSubscriptionRef = useRef(null);
   const [tilt, setTilt] = useState(null); // { pitch, roll } หน่วยองศา
+  const badPostureSinceRef = useRef(null); // เวลา (ms) ที่เริ่มนั่งท่าไม่ดีต่อเนื่อง
+  const [postureAlert, setPostureAlert] = useState(null); // ข้อความท่าไม่ดี แยกจาก isAlert (เตือนนั่งนาน)
 
   const [weekData] = useState(generateMockWeekData()); // TODO: เปลี่ยนเป็นข้อมูลจริงจาก BLE ทีหลัง
   const { score, tier } = calculateWeeklyScore(weekData);
@@ -77,6 +98,21 @@ export default function App() {
     }
     return () => clearInterval(interval);
   }, [isConnected]);
+
+  // เตือนท่านั่งไม่ดีเมื่อผิดท่าต่อเนื่อง BAD_POSTURE_SECONDS วินาที; กลับมาท่าดีเมื่อไหร่เตือนหายและเริ่มนับใหม่
+  useEffect(() => {
+    const status = getPostureStatus(tilt);
+    if (!status.isBadPosture) {
+      badPostureSinceRef.current = null;
+      setPostureAlert(null);
+      return;
+    }
+    const now = Date.now();
+    if (badPostureSinceRef.current === null) badPostureSinceRef.current = now;
+    if (now - badPostureSinceRef.current >= BAD_POSTURE_SECONDS * 1000) {
+      setPostureAlert(status.label);
+    }
+  }, [tilt]);
 
   const stopTiltMonitoring = () => {
     if (tiltSubscriptionRef.current) {
@@ -267,6 +303,12 @@ export default function App() {
             <Text style={styles.tiltPlaceholder}>
               {isConnected ? 'กำลังรอข้อมูลจากเข็มขัด...' : 'เชื่อมต่อเข็มขัดเพื่อดูมุมเอียง'}
             </Text>
+          )}
+          {postureAlert && (
+            <View style={styles.alertBox}>
+              <ShieldAlert color="#EF4444" size={20} />
+              <Text style={styles.alertText}>ท่านั่งไม่ดี: {postureAlert}</Text>
+            </View>
           )}
         </View>
 
