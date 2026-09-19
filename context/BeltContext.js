@@ -60,7 +60,7 @@ export function BeltProvider({ children }) {
   const [chartRange, setChartRange] = useState('7d');
   const [chartData, setChartData] = useState([]);
   const [streak, setStreak] = useState(0); // จำนวนวันดี (ท่าไม่ดี < 30%) ติดต่อกัน
-  const { score, tier, lowData, adjustment } = calculateWeeklyScore(weekData);
+  const { score, tier, lowData } = calculateWeeklyScore(weekData);
   const readiness = getReadinessMessage(tier);
 
   const [selfRating, setSelfRating] = useState(null);
@@ -321,7 +321,6 @@ export function BeltProvider({ children }) {
     score,
     tier,
     lowData,
-    adjustment,
     readiness,
     // self-report
     selfRating,

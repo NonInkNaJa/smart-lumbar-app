@@ -6,7 +6,8 @@ export const SLUMP_PITCH_THRESHOLD = 65; // pitch ต่ำกว่านี้
 export const HUNCH_ROLL_THRESHOLD = -100; // roll ต่ำกว่านี้ = หลังค่อม
 export const BAD_POSTURE_SECONDS = 10; // ท่าไม่ดีต่อเนื่องกี่วินาทีถึงจะเตือน
 export const DEFAULT_SITTING_ALERT_MINUTES = 45; // ค่าเริ่มต้น: นั่งต่อเนื่องกี่นาทีถึงจะเตือนให้ลุก (ผู้ใช้ปรับเองได้ในหน้าตั้งค่า)
-export const SITTING_ALERT_OPTIONS = [20, 30, 45, 60]; // ตัวเลือกในหน้าตั้งค่า (นาที)
+export const SITTING_ALERT_MIN_MINUTES = 10; // พิมพ์เวลาเตือนนั่งนานได้ต่ำสุด (นาที) กันพิมพ์ค่าประหลาด
+export const SITTING_ALERT_MAX_MINUTES = 120; // พิมพ์ได้สูงสุด (นาที)
 // ==========================================================
 
 export const APP_NAME_TH = 'หลังเทพ';

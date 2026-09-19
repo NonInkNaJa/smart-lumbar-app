@@ -12,7 +12,7 @@ import { Card, CardHeader, COLORS, ScreenTitle, useScreenStyles } from '../compo
 import { useTheme } from '../components/theme';
 
 export default function HistoryScreen() {
-  const { score, lowData, adjustment, readiness, chartRange, setChartRange, chartData } = useBelt();
+  const { score, lowData, readiness, chartRange, setChartRange, chartData } = useBelt();
   const viewShotRef = useRef(null);
   const theme = useTheme();
   const screen = useScreenStyles();
@@ -22,12 +22,10 @@ export default function HistoryScreen() {
   const goodSec = chartData.reduce((a, b) => a + b.goodSeconds, 0);
   const badSec = chartData.reduce((a, b) => a + b.badSeconds, 0);
   const totalSec = goodSec + badSec;
-  const strainedDays = chartData.filter((b) => b.penalty > 0).length; // วันที่ถูกหักคะแนนเพราะรายงานว่าหลังตึงมาก
   const summaryText =
     totalSec < MIN_TRACKED_SECONDS
       ? 'ยังไม่มีข้อมูลในช่วงนี้'
-      : `ตรวจวัดรวม ${Math.round(totalSec / 60)} นาที · ท่าไม่ดี ${Math.round((badSec / totalSec) * 100)}%` +
-        (strainedDays > 0 ? ` · หักคะแนน ${strainedDays} วัน (รายงานว่าหลังตึง)` : '');
+      : `ตรวจวัดรวม ${Math.round(totalSec / 60)} นาที · ท่าไม่ดี ${Math.round((badSec / totalSec) * 100)}%`;
 
   const handleShare = async () => {
     try {
@@ -68,9 +66,6 @@ export default function HistoryScreen() {
             <Text style={[styles.scoreText, { color: readiness.color }]}>{score === null ? '--' : `${score}/100`}</Text>
             <Text style={[styles.tierLabel, { color: readiness.color }]}>{readiness.label}</Text>
             <Text style={styles.adviceText}>{readiness.advice}</Text>
-            {score !== null && adjustment > 0 && (
-              <Text style={styles.lowDataText}>หักจากที่คุณรายงานว่าหลังตึง −{adjustment} คะแนน</Text>
-            )}
             {score !== null && lowData && (
               <Text style={styles.lowDataText}>ข้อมูลยังน้อย คะแนนอาจยังไม่แม่นยำ (ใส่เข็มขัดนานขึ้นจะแม่นขึ้น)</Text>
             )}

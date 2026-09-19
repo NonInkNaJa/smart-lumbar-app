@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DEFAULT_SITTING_ALERT_MINUTES, SITTING_ALERT_OPTIONS } from '../config';
+import { DEFAULT_SITTING_ALERT_MINUTES, SITTING_ALERT_MIN_MINUTES, SITTING_ALERT_MAX_MINUTES } from '../config';
 
 // การตั้งค่าของผู้ใช้ เก็บเป็น JSON ก้อนเดียวใน AsyncStorage
 const SETTINGS_KEY = 'app-settings';
@@ -9,11 +9,25 @@ export const DEFAULT_SETTINGS = {
   darkMode: false, // โหมดมืด
 };
 
-// กรองค่าที่อ่านมา: ค่าที่ไม่ถูกต้อง (ข้อมูลเสีย/ตัวเลือกที่ไม่มีแล้ว) ใช้ค่าเริ่มต้นแทน
+// เวลาเตือนนั่งนานที่ใช้ได้: จำนวนเต็มระหว่าง MIN-MAX นาที
+export function isValidSittingMinutes(n) {
+  return Number.isInteger(n) && n >= SITTING_ALERT_MIN_MINUTES && n <= SITTING_ALERT_MAX_MINUTES;
+}
+
+// แปลงข้อความที่ผู้ใช้พิมพ์เป็นนาที: ต้องเป็นตัวเลขล้วน 1-3 หลักและอยู่ในช่วงที่กำหนด ไม่งั้นคืน null
+// (ปฏิเสธ ว่าง, ติดลบ, ทศนิยม, ตัวอักษร, เกินช่วง)
+export function parseSittingMinutes(text) {
+  const s = String(text == null ? '' : text).trim();
+  if (!/^\d{1,3}$/.test(s)) return null;
+  const n = parseInt(s, 10);
+  return isValidSittingMinutes(n) ? n : null;
+}
+
+// กรองค่าที่อ่านมา: ค่าที่ไม่ถูกต้อง (ข้อมูลเสีย/นอกช่วง) ใช้ค่าเริ่มต้นแทน
 export function sanitizeSettings(raw) {
   const s = raw && typeof raw === 'object' ? raw : {};
   return {
-    sittingAlertMinutes: SITTING_ALERT_OPTIONS.includes(s.sittingAlertMinutes)
+    sittingAlertMinutes: isValidSittingMinutes(s.sittingAlertMinutes)
       ? s.sittingAlertMinutes
       : DEFAULT_SETTINGS.sittingAlertMinutes,
     darkMode: typeof s.darkMode === 'boolean' ? s.darkMode : DEFAULT_SETTINGS.darkMode,

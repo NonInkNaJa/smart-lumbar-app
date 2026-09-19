@@ -123,7 +123,7 @@ export default function HomeScreen() {
           )}
         </Card>
 
-        {/* Self-report: มีผลต่อคะแนนความพร้อมของวันนี้ (ตึงมาก 😖😕 หักคะแนน) */}
+        {/* Self-report: บันทึกอย่างเดียว ไม่แสดงผลต่อคะแนนให้ผู้ใช้เห็น (ตัวคำนวณคะแนนใช้ค่านี้ข้างหลัง) */}
         <Card>
           <CardHeader Icon={HeartPulse} color={COLORS.red} title="วันนี้หลังตึงแค่ไหน?" />
           <View style={styles.ratingRow}>
@@ -141,7 +141,6 @@ export default function HomeScreen() {
             })}
           </View>
           {selfRating && <Text style={styles.savedText}>บันทึกแล้ว ✓</Text>}
-          <Text style={styles.ratingHint}>ถ้าเลือก 😖 หรือ 😕 (ตึงมาก) จะหักคะแนนความพร้อมของวันนี้ 10 คะแนน</Text>
         </Card>
       </ScrollView>
     </SafeAreaView>
@@ -173,7 +172,6 @@ const makeStyles = (t) =>
     ratingButtonSelected: { backgroundColor: t.selected },
     ratingEmoji: { fontSize: 24 },
     savedText: { fontSize: 13, color: COLORS.green, textAlign: 'center', marginTop: 10 },
-    ratingHint: { fontSize: 12, color: t.faint, textAlign: 'center', marginTop: 10 },
     exerciseRow: { paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: t.border },
     exerciseName: { fontSize: 15, color: t.text2, fontWeight: '500' },
     exerciseDetail: { fontSize: 13, color: t.muted, marginLeft: 14, marginTop: 2 },

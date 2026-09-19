@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bell, Bluetooth, Info, Moon, Sun, Timer } from 'lucide-react-native';
 import appConfig from '../app.json';
@@ -9,10 +9,12 @@ import {
   BAD_POSTURE_SECONDS,
   DEVICE_NAME,
   HUNCH_ROLL_THRESHOLD,
-  SITTING_ALERT_OPTIONS,
+  SITTING_ALERT_MAX_MINUTES,
+  SITTING_ALERT_MIN_MINUTES,
   SLUMP_PITCH_THRESHOLD,
 } from '../config';
 import { GOOD_DAY_MAX_BAD_RATIO } from '../utils/postureStats';
+import { parseSittingMinutes } from '../utils/settings';
 import { useBelt } from '../context/BeltContext';
 import { notifyBadPosture, notifySittingTooLong } from '../utils/notifications';
 import { Button, Card, CardHeader, COLORS, ScreenTitle, useScreenStyles } from '../components/ui';
@@ -23,6 +25,28 @@ export default function SettingsScreen() {
   const theme = useTheme();
   const screen = useScreenStyles();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+
+  // ช่องพิมพ์เวลาเตือนนั่งนาน: พิมพ์ได้เฉพาะตัวเลข และจะ "บันทึก" ก็ต่อเมื่ออยู่ในช่วง MIN-MAX
+  // (บันทึกตอนกดปุ่ม บันทึก / กดเสร็จบนคีย์บอร์ด / เลิกแตะช่อง ไม่บันทึกทุกตัวอักษรที่พิมพ์ กันเตือนเด้งระหว่างพิมพ์ค่ากลางทาง เช่น พิมพ์ 1 แล้วต่อเป็น 120)
+  const saved = settings.sittingAlertMinutes;
+  const [draft, setDraft] = useState(String(saved));
+  const [revertNote, setRevertNote] = useState(null);
+  useEffect(() => setDraft(String(saved)), [saved]);
+  const parsed = parseSittingMinutes(draft);
+  const canSave = parsed !== null && parsed !== saved;
+  const onChangeMinutes = (text) => {
+    setRevertNote(null);
+    setDraft(text.replace(/\D/g, '').slice(0, 3)); // ตัดทุกอย่างที่ไม่ใช่ตัวเลขทิ้ง (ติดลบ, จุดทศนิยม, ตัวอักษร)
+  };
+  const commitMinutes = () => {
+    if (parsed === null) {
+      // ค่าไม่ถูกต้อง: คืนค่าเดิมและบอกเหตุผล
+      setRevertNote(`ค่าไม่ถูกต้อง ใช้ค่าเดิม ${saved} นาที (ต้องอยู่ระหว่าง ${SITTING_ALERT_MIN_MINUTES}-${SITTING_ALERT_MAX_MINUTES} นาที)`);
+      setDraft(String(saved));
+      return;
+    }
+    if (parsed !== saved) updateSettings({ sittingAlertMinutes: parsed });
+  };
 
   return (
     <SafeAreaView style={screen.container} edges={['top']}>
@@ -62,18 +86,35 @@ export default function SettingsScreen() {
         {/* ตั้งเวลาเตือนนั่งนาน */}
         <Card>
           <CardHeader Icon={Timer} color={COLORS.blue} title="เตือนนั่งนาน" />
-          <Text style={styles.infoLine}>เตือนให้ลุกยืดเส้นเมื่อนั่งต่อเนื่องครบกี่นาที</Text>
-          <View style={styles.optionRow}>
-            {SITTING_ALERT_OPTIONS.map((m) => (
-              <TouchableOpacity
-                key={m}
-                style={[styles.optionButton, settings.sittingAlertMinutes === m && styles.optionButtonSelected]}
-                onPress={() => updateSettings({ sittingAlertMinutes: m })}
-              >
-                <Text style={[styles.optionText, settings.sittingAlertMinutes === m && styles.optionTextSelected]}>{m} นาที</Text>
-              </TouchableOpacity>
-            ))}
+          <Text style={styles.infoLine}>
+            เตือนให้ลุกยืดเส้นเมื่อนั่งต่อเนื่องครบกี่นาที (พิมพ์ได้ {SITTING_ALERT_MIN_MINUTES}-{SITTING_ALERT_MAX_MINUTES} นาที)
+          </Text>
+          <View style={styles.inputRow}>
+            <TextInput
+              style={[styles.minutesInput, parsed === null && styles.minutesInputInvalid]}
+              value={draft}
+              onChangeText={onChangeMinutes}
+              onBlur={commitMinutes}
+              onSubmitEditing={commitMinutes}
+              keyboardType="number-pad"
+              returnKeyType="done"
+              maxLength={3}
+              selectTextOnFocus
+              placeholder="45"
+              placeholderTextColor={theme.faint}
+              accessibilityLabel="เวลาเตือนนั่งนาน (นาที)"
+            />
+            <Text style={styles.unitText}>นาที</Text>
+            <Button label="บันทึก" onPress={commitMinutes} disabled={!canSave} style={styles.saveButton} />
           </View>
+          {parsed === null && (
+            <Text style={styles.errorText}>
+              ใส่ตัวเลขระหว่าง {SITTING_ALERT_MIN_MINUTES}-{SITTING_ALERT_MAX_MINUTES} นาที
+            </Text>
+          )}
+          {parsed !== null && canSave && <Text style={styles.infoLine}>กด "บันทึก" หรือปุ่มเสร็จบนคีย์บอร์ดเพื่อใช้ค่านี้</Text>}
+          {parsed !== null && !canSave && <Text style={styles.savedLine}>ตั้งไว้ที่ {saved} นาที ✓</Text>}
+          {revertNote && <Text style={styles.errorText}>{revertNote}</Text>}
         </Card>
 
         {/* ทดสอบแจ้งเตือน */}
@@ -113,9 +154,10 @@ const makeStyles = (t) =>
     secondButton: { marginTop: 8 },
     switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     switchLabel: { flex: 1, fontSize: 14, color: t.muted, marginRight: 12 },
-    optionRow: { flexDirection: 'row', flexWrap: 'wrap' },
-    optionButton: { minWidth: 72, paddingVertical: 10, paddingHorizontal: 14, marginRight: 8, marginBottom: 8, borderRadius: 8, backgroundColor: t.surface, alignItems: 'center' },
-    optionButtonSelected: { backgroundColor: COLORS.blue },
-    optionText: { fontSize: 14, fontWeight: '600', color: t.text2 },
-    optionTextSelected: { color: '#FFFFFF' },
+    inputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+    minutesInput: { width: 84, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: t.border, backgroundColor: t.surface, color: t.text, fontSize: 20, fontWeight: '700', textAlign: 'center' },
+    minutesInputInvalid: { borderColor: COLORS.red },
+    unitText: { fontSize: 16, color: t.text2, marginLeft: 10 },
+    saveButton: { flex: 1, marginLeft: 12, paddingVertical: 10 },
+    savedLine: { fontSize: 13, color: COLORS.green, marginBottom: 8 },
   });

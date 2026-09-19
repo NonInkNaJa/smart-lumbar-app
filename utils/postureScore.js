@@ -107,26 +107,20 @@ export function getTrainingAdjustment(tier, plannedIntensity) {
   }
   return { level: 'ok', message: 'แผนฝึกวันนี้เหมาะสมกับสภาพร่างกายสัปดาห์นี้' };
 }
+
+// ท่ายืดเหยียดสำหรับพนักงานออฟฟิศ (หลัก ergonomics) เรียงตามลำดับความสำคัญ
+const OFFICE_STRETCHES = [
+  { name: 'ยืดกล้ามเนื้อคอและบ่า', detail: 'เอียงศีรษะไปด้านข้าง ใช้มือช่วยกดเบาๆ ค้าง 15-20 วินาที สลับข้าง' },
+  { name: 'ยืดอกและไหล่ (Chest Opener)', detail: 'ประสานมือด้านหลัง ยืดอกขึ้น ค้าง 15-20 วินาที' },
+  { name: 'ยืดสะโพก (Hip Flexors)', detail: 'ยืนก้าวขาไปด้านหลัง ย่อเข่าหน้า ดันสะโพกไปข้างหน้า ค้าง 15-20 วินาที' },
+  { name: 'ยืดหลังส่วนล่าง (Forward Bend)', detail: 'ก้มตัวช้าๆ มือแตะปลายเท้า ค้าง 15 วินาที' },
+];
+
+// จำนวนท่าที่แสดงตามระดับความเสี่ยง (tier): เสี่ยงต่ำ 2 ท่าแรก, กลาง 3 ท่าแรก, สูง ครบ 4 ท่า
+// tier อื่น (เช่น no-data ที่ยังไม่มีข้อมูล) ไม่แสดงท่า
+const STRETCH_COUNT_BY_TIER = { low: 2, moderate: 3, high: 4 };
+
 export function getRecommendedRoutine(tier) {
-  const routines = {
-    low: [
-      { name: 'Cat-Cow', detail: '10 ครั้ง' },
-      { name: "World's Greatest Stretch", detail: '5 ครั้ง/ข้าง' },
-      { name: 'Glute Bridge', detail: '15 ครั้ง' },
-    ],
-    moderate: [
-      { name: "Child's Pose", detail: '30 วินาที' },
-      { name: 'Hip Flexor Stretch', detail: '30 วินาที/ข้าง' },
-      { name: 'Thoracic Extension (โฟมโรลเลอร์)', detail: '10 ครั้ง' },
-      { name: 'Cat-Cow', detail: '10 ครั้ง' },
-    ],
-    high: [
-      { name: "Child's Pose", detail: '60 วินาที' },
-      { name: '90/90 Hip Stretch', detail: '45 วินาที/ข้าง' },
-      { name: 'Prone Press-up (McKenzie)', detail: '10 ครั้ง' },
-      { name: 'Deep Breathing + Decompression Hang', detail: '30 วินาที' },
-      { name: '⚠️ หลีกเลี่ยงท่า loaded spinal flexion วันนี้' },
-    ],
-  };
-  return routines[tier] || [];
+  const count = STRETCH_COUNT_BY_TIER[tier] || 0;
+  return OFFICE_STRETCHES.slice(0, count).map((s) => ({ ...s }));
 }
