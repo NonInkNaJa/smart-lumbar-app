@@ -9,6 +9,7 @@ import {
   getReadinessMessage,
   getTrainingAdjustment,
   generateMockWeekData,
+  getRecommendedRoutine,
 } from './utils/postureScore';
 import {
   saveSelfReport,
@@ -59,13 +60,14 @@ export default function App() {
   useEffect(() => {
     let interval = null;
     if (isConnected) {
+      // sittingTime เก็บเป็นนาที: เพิ่ม 1 ทุกๆ 60 วินาที
       interval = setInterval(() => {
         setSittingTime((prev) => {
           const nextTime = prev + 1;
           if (nextTime >= 45) setIsAlert(true);
           return nextTime;
         });
-      }, 1000);
+      }, 60 * 1000);
     } else {
       clearInterval(interval);
     }
@@ -84,6 +86,10 @@ export default function App() {
 
   const handleConnect = async () => {
     setErrorMsg(null);
+    if (!bleManager) {
+      setErrorMsg('อุปกรณ์นี้ไม่รองรับ Bluetooth (หรือเปิดใน Expo Go)');
+      return;
+    }
     const permitted = await requestPermissions();
     if (!permitted) {
       setErrorMsg('ต้องอนุญาตสิทธิ์ Bluetooth/Location ก่อนเชื่อมต่อ');
