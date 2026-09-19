@@ -1,6 +1,5 @@
 import React, { useMemo, useRef } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Activity, Share2 } from 'lucide-react-native';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
@@ -8,7 +7,7 @@ import { CHART_RANGES } from '../config';
 import { MIN_TRACKED_SECONDS } from '../utils/postureStats';
 import { getReadinessMessage } from '../utils/postureScore';
 import { useBelt } from '../context/BeltContext';
-import { Card, CardHeader, COLORS, ScreenTitle, useScreenStyles } from '../components/ui';
+import { Card, CardHeader, COLORS, Screen, ScreenTitle, useScreenStyles } from '../components/ui';
 import { useTheme } from '../components/theme';
 
 export default function HistoryScreen() {
@@ -42,7 +41,7 @@ export default function HistoryScreen() {
   };
 
   return (
-    <SafeAreaView style={screen.container} edges={['top']}>
+    <Screen>
       <ScrollView contentContainerStyle={screen.scrollContent}>
         <ScreenTitle title="ประวัติ" subtitle="คะแนนและกราฟท่านั่งจากข้อมูลจริง" />
 
@@ -104,7 +103,7 @@ export default function HistoryScreen() {
           <Text style={styles.shareButtonText}>แชร์สรุปนี้</Text>
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

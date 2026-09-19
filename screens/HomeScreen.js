@@ -1,12 +1,13 @@
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Activity, Bluetooth, CalendarDays, Clock, Flame, HeartPulse, Pause, Play } from 'lucide-react-native';
 import { APP_NAME_TH, APP_NAME_EN } from '../config';
 import { useBelt } from '../context/BeltContext';
 import { getRecommendedRoutine } from '../utils/postureScore';
-import { AlertBox, Button, Card, CardHeader, COLORS, IconBadge, ScreenTitle, useScreenStyles } from '../components/ui';
+import { AlertBox, Button, Card, CardHeader, COLORS, IconBadge, Screen, ScreenTitle, useScreenStyles } from '../components/ui';
+import { Mascot } from '../components/Mascot';
 import { useTheme } from '../components/theme';
+import { getStretchImage } from '../utils/images';
 
 const RATING_EMOJIS = ['😖', '😕', '😐', '🙂', '😄'];
 
@@ -33,8 +34,10 @@ export default function HomeScreen() {
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
   return (
-    <SafeAreaView style={screen.container} edges={['top']}>
+    <Screen>
       <ScrollView contentContainerStyle={screen.scrollContent}>
+        {/* มาสคอตต้อนรับ อยู่บนสุดก่อนการ์ดแรก */}
+        <Mascot />
         <ScreenTitle title={APP_NAME_TH} subtitle={APP_NAME_EN} />
 
         {/* Streak: วันดี (นั่งท่าไม่ดีต่ำกว่า 30% ของเวลา) ติดต่อกัน; ยังเป็น 0 ไม่โชว์ตัวเลข ให้กำลังใจแทน */}
@@ -112,12 +115,25 @@ export default function HomeScreen() {
         {/* ท่ายืดเหยียดที่แนะนำวันนี้ */}
         <Card>
           <CardHeader Icon={CalendarDays} color={COLORS.amber} title="ท่ายืดเหยียดที่แนะนำวันนี้" />
-          {getRecommendedRoutine(tier).map((ex, i) => (
-            <View key={i} style={styles.exerciseRow}>
-              <Text style={styles.exerciseName}>• {ex.name}</Text>
-              {ex.detail && <Text style={styles.exerciseDetail}>{ex.detail}</Text>}
-            </View>
-          ))}
+          {getRecommendedRoutine(tier).map((ex, i) => {
+            const image = getStretchImage(ex.name);
+            return (
+              <View key={i} style={styles.exerciseRow}>
+                {image ? (
+                  <Image source={image} style={styles.exerciseImage} resizeMode="cover" accessibilityLabel={`ภาพประกอบท่า ${ex.name}`} />
+                ) : ex.detail ? (
+                  // ท่าที่ยังไม่มีรูป: กรอบว่างขนาดเท่ากัน ให้แถวเรียงเสมอกัน (แถวคำเตือนที่ไม่มีวิธีทำ ไม่ต้องมีกรอบ)
+                  <View style={[styles.exerciseImage, styles.exerciseImageEmpty]}>
+                    <Text style={styles.exerciseImageEmptyText}>🧘</Text>
+                  </View>
+                ) : null}
+                <View style={styles.exerciseText}>
+                  <Text style={styles.exerciseName}>• {ex.name}</Text>
+                  {ex.detail && <Text style={styles.exerciseDetail}>{ex.detail}</Text>}
+                </View>
+              </View>
+            );
+          })}
           {getRecommendedRoutine(tier).length === 0 && (
             <Text style={styles.tiltPlaceholder}>สวมเข็มขัดสักระยะ แล้วแอปจะแนะนำท่ายืดเหยียดให้ตามข้อมูลของคุณ</Text>
           )}
@@ -143,7 +159,7 @@ export default function HomeScreen() {
           {selfRating && <Text style={styles.savedText}>บันทึกแล้ว ✓</Text>}
         </Card>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 
@@ -172,7 +188,12 @@ const makeStyles = (t) =>
     ratingButtonSelected: { backgroundColor: t.selected },
     ratingEmoji: { fontSize: 24 },
     savedText: { fontSize: 13, color: COLORS.green, textAlign: 'center', marginTop: 10 },
-    exerciseRow: { paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: t.border },
+    exerciseRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: t.border },
+    // รูปประกอบท่า: ต้นฉบับแนวนอน 1408x768 (อัตราส่วน ~1.83) แสดงเป็นรูปเล็กข้างชื่อท่า
+    exerciseImage: { width: 104, height: 57, borderRadius: 8, marginRight: 12, backgroundColor: t.surface },
+    exerciseImageEmpty: { alignItems: 'center', justifyContent: 'center' },
+    exerciseImageEmptyText: { fontSize: 22, opacity: 0.6 },
+    exerciseText: { flex: 1 },
     exerciseName: { fontSize: 15, color: t.text2, fontWeight: '500' },
-    exerciseDetail: { fontSize: 13, color: t.muted, marginLeft: 14, marginTop: 2 },
+    exerciseDetail: { fontSize: 13, color: t.muted, marginTop: 2 },
   });

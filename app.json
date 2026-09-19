@@ -4,7 +4,7 @@
     "slug": "smart-lumbar-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/app_icon.png.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -15,9 +15,8 @@
     "android": {
       "package": "com.nonink.smartlumbarapp",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/app_icon.png.png",
+        "backgroundColor": "#268784"
       },
       "permissions": [
         "android.permission.BLUETOOTH",

@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bell, Bluetooth, Info, Moon, Sun, Timer } from 'lucide-react-native';
 import appConfig from '../app.json';
 import {
@@ -17,7 +16,7 @@ import { GOOD_DAY_MAX_BAD_RATIO } from '../utils/postureStats';
 import { parseSittingMinutes } from '../utils/settings';
 import { useBelt } from '../context/BeltContext';
 import { notifyBadPosture, notifySittingTooLong } from '../utils/notifications';
-import { Button, Card, CardHeader, COLORS, ScreenTitle, useScreenStyles } from '../components/ui';
+import { Button, Card, CardHeader, COLORS, Screen, ScreenTitle, useScreenStyles } from '../components/ui';
 import { useTheme } from '../components/theme';
 
 export default function SettingsScreen() {
@@ -49,7 +48,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={screen.container} edges={['top']}>
+    <Screen>
       <ScrollView contentContainerStyle={screen.scrollContent}>
         <ScreenTitle title="ตั้งค่า" />
 
@@ -141,7 +140,7 @@ export default function SettingsScreen() {
           </Text>
         </Card>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 

@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { Image, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ShieldAlert } from 'lucide-react-native';
 import { useTheme } from './theme';
+import { BACKGROUND_IMAGE } from '../utils/images';
 
 // สีสื่อความหมาย (ไม่เปลี่ยนตามโหมดสว่าง/มืด) ส่วนสีพื้นหลัง/ข้อความอยู่ใน components/theme.js
 export const COLORS = {
@@ -18,6 +20,8 @@ const makeStyles = (t) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: t.bg },
     scrollContent: { padding: 20 },
+    bgImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' },
+    bgOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: t.bgOverlay },
     badge: {
       alignItems: 'center',
       justifyContent: 'center',
@@ -30,7 +34,8 @@ const makeStyles = (t) =>
     cardTitleNoIcon: { marginLeft: 0 },
     screenTitleWrap: { marginBottom: 20 },
     screenTitle: { fontSize: 28, fontWeight: 'bold', color: t.text, textAlign: 'center' },
-    screenSubtitle: { fontSize: 14, color: t.muted, textAlign: 'center' },
+    // ข้อความรองอยู่บนรูปพื้นหลังโดยตรง (ไม่มีการ์ดรอง) ใช้สีเข้มกว่า muted เพราะพื้นเขียวอ่อนทำให้ muted เหลือความคมชัดแค่ ~3.5 (ต่ำกว่าเกณฑ์ 4.5)
+    screenSubtitle: { fontSize: 14, color: t.text2, textAlign: 'center' },
     button: { paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
     buttonText: { color: '#FFFFFF', fontWeight: '600', fontSize: 16 },
     alertBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: t.alertBg, padding: 10, borderRadius: 8, marginTop: 10 },
@@ -46,6 +51,18 @@ export function useUiStyles() {
 // สไตล์พื้นฐานของหน้าจอ: { container, scrollContent }
 export function useScreenStyles() {
   return useUiStyles();
+}
+
+// กรอบหน้าจอมาตรฐานของทุกหน้า: รูปพื้นหลัง (ครอบเต็มจอ อยู่หลังสุด) + ชั้นเคลือบตามธีม แล้วค่อยเป็นเนื้อหา
+export function Screen({ children }) {
+  const styles = useUiStyles();
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <Image source={BACKGROUND_IMAGE} style={styles.bgImage} resizeMode="cover" accessible={false} />
+      <View style={styles.bgOverlay} />
+      {children}
+    </SafeAreaView>
+  );
 }
 
 // ไอคอนในกรอบสี (badge) มีเงา ดูมีมิติ; active=false จะเป็นสีเทา (ใช้กับแท็บที่ไม่ได้เลือก)
