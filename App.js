@@ -17,10 +17,12 @@ import {
   saveTrainingIntensity,
   getTrainingPlan,
 } from './utils/storage';
+import { parseTiltPayload } from './utils/tilt';
 
 const DEVICE_NAME = 'SmartLumbarBelt';
-const SERVICE_UUID = '0000xxxx-0000-1000-8000-00805f9b34fb';
-const CHARACTERISTIC_UUID = '0000yyyy-0000-1000-8000-00805f9b34fb';
+// ต้องตรงกับ firmware/smart_lumbar_belt/smart_lumbar_belt.ino
+const SERVICE_UUID = 'd5e630c8-e528-468a-a3ec-9386004b4327';
+const CHARACTERISTIC_UUID = '002cf995-2911-4bc5-9143-3991ef0d6cf6';
 
 let bleManager = null; try { bleManager = new BleManager(); } catch(e) { console.log("BleManager unavailable"); }
 
@@ -34,6 +36,8 @@ export default function App() {
   const [isAlert, setIsAlert] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   const connectedDeviceRef = useRef(null);
+  const tiltSubscriptionRef = useRef(null);
+  const [tilt, setTilt] = useState(null); // { pitch, roll } หน่วยองศา
 
   const [weekData] = useState(generateMockWeekData()); // TODO: เปลี่ยนเป็นข้อมูลจริงจาก BLE ทีหลัง
   const { score, tier } = calculateWeeklyScore(weekData);
@@ -73,6 +77,20 @@ export default function App() {
     }
     return () => clearInterval(interval);
   }, [isConnected]);
+
+  const stopTiltMonitoring = () => {
+    if (tiltSubscriptionRef.current) {
+      tiltSubscriptionRef.current.remove();
+      tiltSubscriptionRef.current = null;
+    }
+    setTilt(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (tiltSubscriptionRef.current) tiltSubscriptionRef.current.remove();
+    };
+  }, []);
 
   const requestPermissions = async () => {
     if (Platform.OS !== 'android') return true;
@@ -121,9 +139,21 @@ export default function App() {
           connectedDeviceRef.current = connectedDevice;
 
           connectedDevice.onDisconnected(() => {
+            stopTiltMonitoring();
             setConnectionState('disconnected');
             connectedDeviceRef.current = null;
           });
+
+          // รับค่ามุมเอียง (NOTIFY) ที่เฟิร์มแวร์ส่งมาทุก 1 วินาที
+          tiltSubscriptionRef.current = connectedDevice.monitorCharacteristicForService(
+            SERVICE_UUID,
+            CHARACTERISTIC_UUID,
+            (monitorError, characteristic) => {
+              if (monitorError) return; // ตอนตัดการเชื่อมต่อจะมี error ตามมา ซึ่ง onDisconnected จัดการอยู่แล้ว
+              const parsed = parseTiltPayload(characteristic?.value);
+              if (parsed) setTilt(parsed);
+            }
+          );
 
           setConnectionState('connected');
         } catch (e) {
@@ -135,6 +165,7 @@ export default function App() {
   };
 
   const handleDisconnect = async () => {
+    stopTiltMonitoring();
     if (connectedDeviceRef.current) {
       await connectedDeviceRef.current.cancelConnection();
     }
@@ -212,6 +243,30 @@ export default function App() {
               <ShieldAlert color="#EF4444" size={20} />
               <Text style={styles.alertText}>นั่งนานเกินกำหนด! ควรยืดกล้ามเนื้อ</Text>
             </View>
+          )}
+        </View>
+
+        {/* มุมเอียงจากเซนเซอร์ (สด) */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Activity color="#2563EB" size={24} />
+            <Text style={styles.cardTitle}>มุมเอียงลำตัว</Text>
+          </View>
+          {tilt ? (
+            <View style={styles.tiltRow}>
+              <View style={styles.tiltItem}>
+                <Text style={styles.tiltValue}>{tilt.pitch.toFixed(1)}°</Text>
+                <Text style={styles.tiltLabel}>Pitch</Text>
+              </View>
+              <View style={styles.tiltItem}>
+                <Text style={styles.tiltValue}>{tilt.roll.toFixed(1)}°</Text>
+                <Text style={styles.tiltLabel}>Roll</Text>
+              </View>
+            </View>
+          ) : (
+            <Text style={styles.tiltPlaceholder}>
+              {isConnected ? 'กำลังรอข้อมูลจากเข็มขัด...' : 'เชื่อมต่อเข็มขัดเพื่อดูมุมเอียง'}
+            </Text>
           )}
         </View>
 
@@ -319,6 +374,11 @@ const styles = StyleSheet.create({
   intensityButtonTextSelected: { color: '#FFFFFF' },
   adjustmentBox: { padding: 10, borderRadius: 8, marginTop: 12 },
   adjustmentText: { fontSize: 13, fontWeight: '500' },
+  tiltRow: { flexDirection: 'row', justifyContent: 'space-around' },
+  tiltItem: { alignItems: 'center' },
+  tiltValue: { fontSize: 32, fontWeight: 'bold', color: '#1D4ED8' },
+  tiltLabel: { fontSize: 13, color: '#6B7280', marginTop: 2 },
+  tiltPlaceholder: { fontSize: 14, color: '#9CA3AF', textAlign: 'center', paddingVertical: 8 },
   demoLabel: { fontSize: 11, color: "#9CA3AF", textAlign: "center", marginBottom: 12 },
   exerciseRow: { paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
   exerciseName: { fontSize: 15, color: "#374151", fontWeight: "500" },
