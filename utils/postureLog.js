@@ -1,0 +1,91 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getLocalDateKey, emptyDay, keysNeeded, buildSeries } from './postureStats';
+
+const KEY_PREFIX = 'posture-log-'; // เช่น "posture-log-2026-09-19"
+
+// นับสะสมในหน่วยความจำก่อน แล้วค่อยเขียนลง AsyncStorage เป็นรอบ (flushPostureLog)
+// เพื่อไม่ต้องอ่าน-เขียนดิสก์ทุกวินาที
+const pending = {}; // dateKey -> { goodSeconds, badSeconds, hunchedSeconds, slumpedSeconds }
+let writeQueue = Promise.resolve(); // เขียนทีละงาน ไม่ให้ข้อมูลทับกัน
+
+// เรียกทุกครั้งที่ได้ค่า pitch/roll ใหม่ (ประมาณวินาทีละครั้ง) = นับเวลา 1 วินาที
+export function recordPostureSample(status, now = new Date()) {
+  const key = getLocalDateKey(now);
+  const day = pending[key] || (pending[key] = emptyDay());
+  if (status.isBadPosture) {
+    day.badSeconds += 1;
+    if (status.isHunched) day.hunchedSeconds += 1;
+    if (status.isSlumped) day.slumpedSeconds += 1;
+  } else {
+    day.goodSeconds += 1;
+  }
+}
+
+function mergeInto(target, source) {
+  Object.keys(source).forEach((f) => {
+    target[f] = (target[f] || 0) + source[f];
+  });
+}
+
+export function flushPostureLog() {
+  writeQueue = writeQueue.then(async () => {
+    const keys = Object.keys(pending);
+    if (keys.length === 0) return;
+
+    // ย้ายออกจาก pending ก่อน เผื่อมีค่าใหม่เข้ามาระหว่างที่กำลังเขียน
+    const snapshot = {};
+    keys.forEach((k) => {
+      snapshot[k] = pending[k];
+      delete pending[k];
+    });
+
+    try {
+      for (const k of keys) {
+        const raw = await AsyncStorage.getItem(KEY_PREFIX + k);
+        let stored = emptyDay();
+        if (raw) {
+          try {
+            stored = { ...emptyDay(), ...JSON.parse(raw) };
+          } catch (e) {
+            // ข้อมูลของวันนั้นเสีย เริ่มนับใหม่
+          }
+        }
+        mergeInto(stored, snapshot[k]);
+        await AsyncStorage.setItem(KEY_PREFIX + k, JSON.stringify(stored));
+        delete snapshot[k];
+      }
+    } catch (e) {
+      // เขียนไม่สำเร็จ: คืนค่าที่ยังไม่ได้เขียนกลับไปรอรอบถัดไป ไม่ให้ข้อมูลหาย
+      Object.keys(snapshot).forEach((k) => {
+        mergeInto(pending[k] || (pending[k] = emptyDay()), snapshot[k]);
+      });
+    }
+  });
+  return writeQueue;
+}
+
+// อ่านข้อมูลจริงมาสร้างชุดข้อมูลกราฟ (รวมค่าที่ยังไม่ได้เขียนลงดิสก์ด้วย)
+// range: '7d' | '4w' | '6m'
+export async function loadSeries(range, today = new Date()) {
+  const keys = keysNeeded(range, today);
+  const pairs = await AsyncStorage.multiGet(keys.map((k) => KEY_PREFIX + k));
+
+  const recordsByKey = {};
+  pairs.forEach(([, value], i) => {
+    if (!value) return;
+    try {
+      recordsByKey[keys[i]] = JSON.parse(value);
+    } catch (e) {
+      // ข้ามข้อมูลที่เสีย
+    }
+  });
+
+  Object.keys(pending).forEach((k) => {
+    if (!keys.includes(k)) return;
+    const merged = { ...emptyDay(), ...(recordsByKey[k] || {}) };
+    mergeInto(merged, pending[k]);
+    recordsByKey[k] = merged;
+  });
+
+  return buildSeries(range, recordsByKey, today);
+}

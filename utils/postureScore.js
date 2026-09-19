@@ -30,15 +30,6 @@ export function getReadinessMessage(tier) {
   }
 }
 
-export function generateMockWeekData() {
-  const days = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
-  return days.map((label) => ({
-    date: label,
-    badPostureRatio: Math.random() * 0.7,
-    hasData: true,
-  }));
-}
-
 export function getTrainingAdjustment(tier, plannedIntensity) {
   if (!plannedIntensity) return null;
   if (tier === 'high' && plannedIntensity === 'heavy') {

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "smart-lumbar-app",
+    "name": "หลังเทพ",
     "slug": "smart-lumbar-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -22,7 +22,8 @@
       "permissions": [
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
-        "android.permission.BLUETOOTH_CONNECT"
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.VIBRATE"
       ]
     },
     "web": {
@@ -39,7 +40,14 @@
           ]
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#2563EB"
+        }
+      ]
     ],
     "extra": {
       "eas": {
