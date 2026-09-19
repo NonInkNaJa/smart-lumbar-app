@@ -108,7 +108,8 @@ export function getTrainingAdjustment(tier, plannedIntensity) {
   return { level: 'ok', message: 'แผนฝึกวันนี้เหมาะสมกับสภาพร่างกายสัปดาห์นี้' };
 }
 
-// ท่ายืดเหยียดสำหรับพนักงานออฟฟิศ (หลัก ergonomics) เรียงตามลำดับความสำคัญ
+// ท่ายืดเหยียดสำหรับพนักงานออฟฟิศ (หลัก ergonomics) 4 ท่า เรียงตามลำดับความสำคัญ
+// ทุก tier ใช้ท่าเหล่านี้ "ต่อท้ายชุดเดิม" ของ tier นั้น: ต่ำ = 2 ท่าแรก, กลาง = 3 ท่าแรก, สูง = ครบ 4 ท่า
 const OFFICE_STRETCHES = [
   { name: 'ยืดกล้ามเนื้อคอและบ่า', detail: 'เอียงศีรษะไปด้านข้าง ใช้มือช่วยกดเบาๆ ค้าง 15-20 วินาที สลับข้าง' },
   { name: 'ยืดอกและไหล่ (Chest Opener)', detail: 'ประสานมือด้านหลัง ยืดอกขึ้น ค้าง 15-20 วินาที' },
@@ -116,11 +117,40 @@ const OFFICE_STRETCHES = [
   { name: 'ยืดหลังส่วนล่าง (Forward Bend)', detail: 'ก้มตัวช้าๆ มือแตะปลายเท้า ค้าง 15 วินาที' },
 ];
 
-// จำนวนท่าที่แสดงตามระดับความเสี่ยง (tier): เสี่ยงต่ำ 2 ท่าแรก, กลาง 3 ท่าแรก, สูง ครบ 4 ท่า
+// ชุดท่าเดิมของแต่ละ tier (ข้อความเดิมทุกตัวอักษร)
+// ตัดออก 1 ท่าที่ซ้ำความหมายกับท่าใหม่: 'Hip Flexor Stretch' (30 วินาที/ข้าง, tier กลาง) ซ้ำกับ 'ยืดสะโพก (Hip Flexors)'
+// จึงเก็บไว้แค่ตัวใหม่ (มีวิธีทำครบกว่า)
+const CLASSIC_STRETCHES = {
+  low: [
+    { name: 'Cat-Cow', detail: '10 ครั้ง' },
+    { name: "World's Greatest Stretch", detail: '5 ครั้ง/ข้าง' },
+    { name: 'Glute Bridge', detail: '15 ครั้ง' },
+  ],
+  moderate: [
+    { name: "Child's Pose", detail: '30 วินาที' },
+    { name: 'Thoracic Extension (โฟมโรลเลอร์)', detail: '10 ครั้ง' },
+    { name: 'Cat-Cow', detail: '10 ครั้ง' },
+  ],
+  high: [
+    { name: "Child's Pose", detail: '60 วินาที' },
+    { name: '90/90 Hip Stretch', detail: '45 วินาที/ข้าง' },
+    { name: 'Prone Press-up (McKenzie)', detail: '10 ครั้ง' },
+    { name: 'Deep Breathing + Decompression Hang', detail: '30 วินาที' },
+  ],
+};
+
+// แถวคำเตือนท้ายชุดของ tier สูง (ไม่ใช่ท่า ไม่มีรายละเอียด) วางไว้บรรทัดสุดท้ายเสมอ
+const HIGH_CAUTION = { name: '⚠️ หลีกเลี่ยงท่า loaded spinal flexion วันนี้' };
+
+// ชุดที่แสดงจริงต่อ tier (ยิ่งเสี่ยงยิ่งแสดงมาก): ต่ำ 5 ท่า, กลาง 6 ท่า, สูง 8 ท่า + แถวคำเตือน
 // tier อื่น (เช่น no-data ที่ยังไม่มีข้อมูล) ไม่แสดงท่า
-const STRETCH_COUNT_BY_TIER = { low: 2, moderate: 3, high: 4 };
+const ROUTINES = {
+  low: [...CLASSIC_STRETCHES.low, ...OFFICE_STRETCHES.slice(0, 2)],
+  moderate: [...CLASSIC_STRETCHES.moderate, ...OFFICE_STRETCHES.slice(0, 3)],
+  high: [...CLASSIC_STRETCHES.high, ...OFFICE_STRETCHES.slice(0, 4), HIGH_CAUTION],
+};
 
 export function getRecommendedRoutine(tier) {
-  const count = STRETCH_COUNT_BY_TIER[tier] || 0;
-  return OFFICE_STRETCHES.slice(0, count).map((s) => ({ ...s }));
+  if (!Object.prototype.hasOwnProperty.call(ROUTINES, tier)) return [];
+  return ROUTINES[tier].map((s) => ({ ...s }));
 }
