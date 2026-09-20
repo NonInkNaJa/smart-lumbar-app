@@ -51,6 +51,9 @@ export function BeltProvider({ children }) {
   const isPausedRef = useRef(false); // ให้ callback ของ Bluetooth (ผูกไว้ตอนเชื่อมต่อ) เห็นค่าล่าสุด
   isPausedRef.current = isPaused;
   const sittingMsRef = useRef(0); // เวลานั่งสะสม (มิลลิวินาที) นับตามเวลาจริง ไม่ให้เศษนาทีหายตอนหยุด/เริ่มต่อ
+  const sittingLastRef = useRef(null); // เวลา (ms) ที่นับล่าสุด; null = ตอนนี้ไม่ได้นับ (ไม่ได้เชื่อมต่อ/หยุดชั่วคราว)
+  const lastFlushAtRef = useRef(0); // เวลา (ms) ที่เขียนข้อมูลท่านั่งลงเครื่องล่าสุดจากข้อมูลเข็มขัด
+  const tickSittingClockRef = useRef(() => {}); // ให้ callback ของ Bluetooth (ผูกไว้ตอนเชื่อมต่อ) เรียกนับเวลานั่งได้
   const [errorMsg, setErrorMsg] = useState(null);
   const connectedDeviceRef = useRef(null);
   const tiltSubscriptionRef = useRef(null);
@@ -111,25 +114,30 @@ export function BeltProvider({ children }) {
   }, []);
 
   // ---------- ตัวจับเวลานั่ง ----------
+  // นับเวลานั่งเพิ่มตามเวลาจริงที่ผ่านไปนับจากครั้งก่อน แล้วอัปเดต sittingTime (นาที) — ใช้เฉพาะ ref และ setState จึงเรียกจาก callback เก่าได้อย่างปลอดภัย
+  const tickSittingClock = () => {
+    if (sittingLastRef.current === null) return; // ไม่ได้นับอยู่ (ไม่ได้เชื่อมต่อ/หยุดชั่วคราว)
+    const now = Date.now();
+    sittingMsRef.current += elapsedSince(sittingLastRef.current, now);
+    sittingLastRef.current = now;
+    const minutes = Math.floor(sittingMsRef.current / 60000);
+    setSittingTime((prev) => (prev === minutes ? prev : minutes));
+  };
+  tickSittingClockRef.current = tickSittingClock;
+
   // นับอัตโนมัติทันทีที่เชื่อมต่อ; หยุดนับเฉพาะตอนผู้ใช้กด "หยุดชั่วคราว" (isPaused) ค่าที่นับไว้ไม่หาย
   useEffect(() => {
     if (!isConnected || isPaused) return undefined;
     // sittingTime เก็บเป็นนาที นับสะสมตาม "เวลาจริง" ที่ผ่านไป (Date.now) ข้ามช่วงที่หยุดชั่วคราว
     // ไม่นับจำนวนรอบของตัวจับเวลา: ตอนปิดจอ/อยู่เบื้องหลัง Android อาจหน่วงหรือข้ามรอบ เวลานั่งจึงต้องไม่หาย
-    let last = Date.now();
-    const accumulate = () => {
-      const now = Date.now();
-      sittingMsRef.current += elapsedSince(last, now);
-      last = now;
-    };
-    const id = setInterval(() => {
-      accumulate();
-      const minutes = Math.floor(sittingMsRef.current / 60000);
-      setSittingTime((prev) => (prev === minutes ? prev : minutes));
-    }, 1000);
+    // และตอนอยู่เบื้องหลัง React Native หยุดตัวจับเวลา JS ทั้งหมด (setInterval ไม่เดินเลย) จึงให้ข้อมูลจากเข็มขัด (ทุก 1 วินาที)
+    // เรียกนับซ้ำอีกทางด้วย (tickSittingClock ใน callback ของ Bluetooth) — นับตามเวลาจริงจึงเรียกกี่ทางก็ไม่นับซ้ำ
+    sittingLastRef.current = Date.now();
+    const id = setInterval(tickSittingClock, 1000);
     return () => {
       clearInterval(id);
-      accumulate(); // เก็บเศษเวลาช่วงสุดท้ายก่อนหยุด/ตัดการเชื่อมต่อ
+      if (sittingLastRef.current !== null) sittingMsRef.current += elapsedSince(sittingLastRef.current, Date.now()); // เศษเวลาช่วงสุดท้ายก่อนหยุด/ตัดการเชื่อมต่อ
+      sittingLastRef.current = null;
     };
   }, [isConnected, isPaused]);
 
@@ -239,9 +247,15 @@ export function BeltProvider({ children }) {
   }, [isConnected, chartRange]);
 
   // ออกจากแอปไปพื้นหลัง: บันทึกข้อมูลที่ค้างอยู่ทันที กันหายถ้าระบบปิดแอป
+  // กลับมาหน้าจอ: โหลดกราฟ/คะแนน/streak ใหม่ทันที (ตอนอยู่เบื้องหลังตัวจับเวลารีเฟรชหยุดอยู่ ข้อมูลอาจเก่า) และนับเวลานั่งให้ทัน
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
-      if (state !== 'active') flushPostureLog();
+      if (state !== 'active') {
+        flushPostureLog();
+      } else {
+        tickSittingClockRef.current();
+        refreshHistory();
+      }
     });
     return () => sub.remove();
   }, []);
@@ -324,7 +338,16 @@ export function BeltProvider({ children }) {
               if (parsed) {
                 setTilt(parsed);
                 // นับเวลาท่าดี/ไม่ดีลงบันทึกรายวัน (ข้ามตอนหยุดชั่วคราว: ไม่ได้นั่งอยู่ ไม่ให้ประวัติเพี้ยน)
-                if (!isPausedRef.current) recordPostureSample(getPostureStatus(parsed));
+                if (!isPausedRef.current) {
+                  recordPostureSample(getPostureStatus(parsed));
+                  // ข้อมูลเข็มขัดมาทุก 1 วินาทีแม้ตอนอยู่เบื้องหลัง (ตัวจับเวลา JS หยุด) จึงใช้เป็นจังหวะนับเวลานั่งและเขียนข้อมูลลงเครื่องด้วย
+                  tickSittingClockRef.current();
+                  const nowMs = Date.now();
+                  if (nowMs - lastFlushAtRef.current >= FLUSH_INTERVAL_MS) {
+                    lastFlushAtRef.current = nowMs;
+                    flushPostureLog();
+                  }
+                }
               }
             }
           );

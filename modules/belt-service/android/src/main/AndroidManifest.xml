@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Foreground service ชนิด connectedDevice (Android 14+ บังคับระบุชนิด สำหรับแอปที่คุยกับอุปกรณ์ผ่าน Bluetooth) -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
+  <application>
+    <service
+      android:name=".BeltForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="connectedDevice" />
+  </application>
+</manifest>

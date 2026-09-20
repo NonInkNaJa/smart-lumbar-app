@@ -22,6 +22,10 @@ export const FLUSH_INTERVAL_MS = 15 * 1000; // เขียนข้อมูล
 
 export const SCORE_ANIMATION_MS = 700; // ตัวเลขคะแนนนับขึ้น/ลงใช้เวลากี่มิลลิวินาที (0 = เปลี่ยนทันที)
 
+// การแจ้งเตือนถาวรของ foreground service (ตอนแอปรับข้อมูลจากเข็มขัดอยู่เบื้องหลัง)
+export const BACKGROUND_SERVICE_TITLE = 'หลังเทพ กำลังทำงานอยู่';
+export const BACKGROUND_SERVICE_TEXT = 'กำลังรับข้อมูลจากเข็มขัดและเตือนท่านั่ง';
+
 // สถานะภาพรวมบน Home: นั่งถึงกี่ส่วนของเวลาเตือนนั่งนานแล้วเปลี่ยนเป็น "ควรระวัง" (0.8 = ถึง 80%)
 export const STATUS_WARN_RATIO = 0.8;
 
