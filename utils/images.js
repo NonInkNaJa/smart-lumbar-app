@@ -9,6 +9,20 @@ export const BACKGROUND_IMAGE = require('../assets/app_background_1.png.jpg');
 // ตัวการ์ตูนต้อนรับบนสุดของหน้า Home
 export const MASCOT_IMAGE = require('../assets/app_mascot_1.png.jpg');
 
+// ภาพมาสคอตตามระดับ (tier): ตอนนี้ใช้ภาพเดียวกัน (สีหน้ายิ้ม) ทุกระดับ อารมณ์ต่างกันด้วยการเคลื่อนไหว/สีขอบ/ป้ายอีโมจิ
+// ถ้ามีภาพสีหน้าเป็นห่วง/ปกติ ให้ require ภาพใหม่ใส่ที่ high / moderate ตรงนี้ได้เลย (ไม่ต้องแก้ที่อื่น)
+// หมายเหตุ: app_mascot_2 เป็นคนละตัวละคร (หัวใจ) ไม่ใช่สีหน้าอีกแบบของตัวนี้ จึงไม่ได้ใช้
+export const MASCOT_IMAGES_BY_TIER = {
+  low: MASCOT_IMAGE,
+  moderate: MASCOT_IMAGE,
+  high: MASCOT_IMAGE,
+  'no-data': MASCOT_IMAGE,
+};
+
+export function getMascotImage(tier) {
+  return Object.prototype.hasOwnProperty.call(MASCOT_IMAGES_BY_TIER, tier) ? MASCOT_IMAGES_BY_TIER[tier] : MASCOT_IMAGE;
+}
+
 // รูปประกอบท่ายืดเหยียด: key = ชื่อท่าใน utils/postureScore.js (ต้องตรงทุกตัวอักษร)
 // ท่าที่ยังไม่มีรูป (ตอนนี้: 'ยืดสะโพก (Hip Flexors)') ไม่ต้องใส่ในรายการนี้ หน้าจอจะแสดงกรอบว่างแทน
 const STRETCH_IMAGES = {

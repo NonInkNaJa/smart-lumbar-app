@@ -1,26 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { Bell, Bluetooth, Info, Moon, Sun, Timer } from 'lucide-react-native';
+import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Bell, Bluetooth, ChevronRight, Info, Moon, Sun, Timer, Trash2 } from 'lucide-react-native';
 import appConfig from '../app.json';
-import {
-  APP_NAME_EN,
-  APP_NAME_TH,
-  BAD_POSTURE_SECONDS,
-  DEVICE_NAME,
-  HUNCH_ROLL_THRESHOLD,
-  SITTING_ALERT_MAX_MINUTES,
-  SITTING_ALERT_MIN_MINUTES,
-  SLUMP_PITCH_THRESHOLD,
-} from '../config';
-import { GOOD_DAY_MAX_BAD_RATIO } from '../utils/postureStats';
+import { APP_NAME_TH, DEVICE_NAME, SITTING_ALERT_MAX_MINUTES, SITTING_ALERT_MIN_MINUTES } from '../config';
 import { parseSittingMinutes } from '../utils/settings';
 import { useBelt } from '../context/BeltContext';
 import { notifyBadPosture, notifySittingTooLong } from '../utils/notifications';
-import { Button, Card, CardHeader, COLORS, Screen, ScreenTitle, useScreenStyles } from '../components/ui';
+import { Button, Card, CardHeader, COLORS, IconBadge, Screen, ScreenTitle, useScreenStyles } from '../components/ui';
+import { BounceTouchable } from '../components/motion';
 import { useTheme } from '../components/theme';
 
-export default function SettingsScreen() {
-  const { isConnected, isConnecting, errorMsg, toggleConnection, connectLabel, settings, updateSettings } = useBelt();
+export default function SettingsScreen({ navigation }) {
+  const { isConnected, isConnecting, errorMsg, toggleConnection, connectLabel, settings, updateSettings, clearAllData } = useBelt();
+  const [clearing, setClearing] = useState(false); // กำลังล้างข้อมูล (กันกดซ้ำ)
   const theme = useTheme();
   const screen = useScreenStyles();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -47,13 +39,41 @@ export default function SettingsScreen() {
     if (parsed !== saved) updateSettings({ sittingAlertMinutes: parsed });
   };
 
+  // ล้างข้อมูลทั้งหมด: ต้องยืนยันในป๊อปอัพก่อนเสมอ (ลบแล้วกู้คืนไม่ได้) ไม่แตะการเชื่อมต่อ Bluetooth
+  const confirmClearAll = () => {
+    if (clearing) return;
+    Alert.alert(
+      'ล้างข้อมูลทั้งหมด?',
+      'ประวัติท่านั่ง คะแนน streak การประเมินความตึง และจำนวนครั้งที่ลุกยืดเส้นจะถูกลบ และการตั้งค่ากลับเป็นค่าเริ่มต้น ลบแล้วกู้คืนไม่ได้ (การเชื่อมต่อ Bluetooth ไม่ถูกตัด)',
+      [
+        { text: 'ยกเลิก', style: 'cancel' },
+        {
+          text: 'ล้างข้อมูล',
+          style: 'destructive',
+          onPress: async () => {
+            setClearing(true);
+            try {
+              await clearAllData();
+              Alert.alert('ล้างข้อมูลแล้ว', 'ข้อมูลทั้งหมดถูกลบและกลับเป็นค่าเริ่มต้นแล้ว');
+            } catch (e) {
+              Alert.alert('เกิดข้อผิดพลาด', 'ล้างข้อมูลไม่สำเร็จ ลองใหม่อีกครั้ง');
+            } finally {
+              setClearing(false);
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
   return (
     <Screen>
       <ScrollView contentContainerStyle={screen.scrollContent}>
         <ScreenTitle title="ตั้งค่า" />
 
         {/* โหมดมืด */}
-        <Card>
+        <Card index={0}>
           <CardHeader Icon={settings.darkMode ? Moon : Sun} color={settings.darkMode ? COLORS.purple : COLORS.amber} title="โหมดมืด" />
           <View style={styles.switchRow}>
             <Text style={styles.switchLabel}>{settings.darkMode ? 'เปิดอยู่ (พื้นหลังสีเข้ม)' : 'ปิดอยู่ (พื้นหลังสีสว่าง)'}</Text>
@@ -67,7 +87,7 @@ export default function SettingsScreen() {
         </Card>
 
         {/* จัดการ Bluetooth */}
-        <Card>
+        <Card index={1}>
           <CardHeader Icon={Bluetooth} color={isConnected ? COLORS.green : COLORS.slate} title="จัดการ Bluetooth" />
           <Text style={styles.infoLine}>อุปกรณ์: {DEVICE_NAME}</Text>
           <Text style={[styles.statusText, { color: isConnected ? COLORS.green : COLORS.red }]}>
@@ -83,7 +103,7 @@ export default function SettingsScreen() {
         </Card>
 
         {/* ตั้งเวลาเตือนนั่งนาน */}
-        <Card>
+        <Card index={2}>
           <CardHeader Icon={Timer} color={COLORS.blue} title="เตือนนั่งนาน" />
           <Text style={styles.infoLine}>
             เตือนให้ลุกยืดเส้นเมื่อนั่งต่อเนื่องครบกี่นาที (พิมพ์ได้ {SITTING_ALERT_MIN_MINUTES}-{SITTING_ALERT_MAX_MINUTES} นาที)
@@ -117,27 +137,34 @@ export default function SettingsScreen() {
         </Card>
 
         {/* ทดสอบแจ้งเตือน */}
-        <Card>
+        <Card index={3}>
           <CardHeader Icon={Bell} color={COLORS.amber} title="ทดสอบการแจ้งเตือน" />
           <Text style={styles.infoLine}>กดเพื่อดูว่าเครื่องนี้แสดงป๊อปอัพและสั่นหรือไม่ (ไม่ต้องเชื่อมต่อเข็มขัด)</Text>
           <Button label="ทดสอบเตือนท่านั่งไม่ดี" onPress={() => notifyBadPosture('หลังค่อม')} color={COLORS.amber} />
           <Button label="ทดสอบเตือนนั่งนาน" onPress={() => notifySittingTooLong()} color={COLORS.amber} style={styles.secondButton} />
         </Card>
 
-        {/* ข้อมูลแอป */}
-        <Card>
-          <CardHeader Icon={Info} color={COLORS.purple} title="ข้อมูลแอป" />
-          <Text style={styles.appName}>{APP_NAME_TH}</Text>
-          <Text style={styles.infoLine}>{APP_NAME_EN}</Text>
-          <Text style={styles.infoLine}>เวอร์ชัน {appConfig.expo.version}</Text>
+        {/* ล้างข้อมูลทั้งหมด */}
+        <Card index={4}>
+          <CardHeader Icon={Trash2} color={COLORS.red} title="จัดการข้อมูล" />
           <Text style={styles.infoLine}>
-            เกณฑ์เตือนท่านั่ง: หลังค่อมเมื่อ roll ต่ำกว่า {HUNCH_ROLL_THRESHOLD}°, เอนหลังไม่ดีเมื่อ pitch ต่ำกว่า{' '}
-            {SLUMP_PITCH_THRESHOLD}° (ต่อเนื่อง {BAD_POSTURE_SECONDS} วินาที)
+            ลบประวัติท่านั่ง คะแนน streak การประเมินความตึง และจำนวนครั้งที่ลุกยืดเส้น พร้อมคืนการตั้งค่าเป็นค่าเริ่มต้น (ไม่ตัดการเชื่อมต่อ Bluetooth)
           </Text>
-          <Text style={styles.infoLine}>เตือนนั่งนานเมื่อนั่งต่อเนื่องเกิน {settings.sittingAlertMinutes} นาที</Text>
-          <Text style={styles.infoLine}>
-            วันดี (นับ streak) = วันที่นั่งท่าไม่ดีต่ำกว่า {Math.round(GOOD_DAY_MAX_BAD_RATIO * 100)}% ของเวลา
-          </Text>
+          <Button label={clearing ? 'กำลังล้างข้อมูล...' : 'ล้างข้อมูลทั้งหมด'} onPress={confirmClearAll} disabled={clearing} color={COLORS.red} />
+        </Card>
+
+        {/* เกี่ยวกับแอป: ชื่อ/เวอร์ชัน/ฮาร์ดแวร์/เกณฑ์ อยู่ในหน้าแยก */}
+        <Card index={5}>
+          <BounceTouchable style={styles.linkRow} onPress={() => navigation.navigate('About')} accessibilityLabel="เปิดหน้าเกี่ยวกับแอป">
+            <IconBadge Icon={Info} color={COLORS.purple} />
+            <View style={styles.linkText}>
+              <Text style={styles.linkTitle}>เกี่ยวกับแอป</Text>
+              <Text style={styles.linkSub}>
+                {APP_NAME_TH} · เวอร์ชัน {appConfig.expo.version}
+              </Text>
+            </View>
+            <ChevronRight color={theme.faint} size={22} />
+          </BounceTouchable>
         </Card>
       </ScrollView>
     </Screen>
@@ -149,7 +176,10 @@ const makeStyles = (t) =>
     statusText: { fontSize: 16, fontWeight: '500', marginBottom: 12 },
     errorText: { fontSize: 13, color: COLORS.red, marginBottom: 8 },
     infoLine: { fontSize: 14, color: t.muted, marginBottom: 8 },
-    appName: { fontSize: 20, fontWeight: 'bold', color: t.text },
+    linkRow: { flexDirection: 'row', alignItems: 'center' },
+    linkText: { flex: 1, marginLeft: 12 },
+    linkTitle: { fontSize: 18, fontWeight: '600', color: t.text2 },
+    linkSub: { fontSize: 13, color: t.muted, marginTop: 2 },
     secondButton: { marginTop: 8 },
     switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     switchLabel: { flex: 1, fontSize: 14, color: t.muted, marginRight: 12 },

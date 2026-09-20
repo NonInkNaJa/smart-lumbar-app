@@ -9,9 +9,12 @@ import {
   FLUSH_INTERVAL_MS,
 } from '../config';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, sanitizeSettings } from '../utils/settings';
-import { applyDayScores, calculateWeeklyScore, getReadinessMessage } from '../utils/postureScore';
+import { applyDayScores, calculateWeeklyScore, computeWeekChange, getReadinessMessage } from '../utils/postureScore';
 import { getLocalDateKey } from '../utils/postureStats';
-import { recordPostureSample, flushPostureLog, loadSeries, loadStreak } from '../utils/postureLog';
+import { getOverallStatus } from '../utils/overallStatus';
+import { addStretch, countInKeys, loadStretchLog, saveStretchLog } from '../utils/stretchLog';
+import { decideCelebration, loadCelebrationState, saveCelebrationState } from '../utils/streakCelebration';
+import { recordPostureSample, flushPostureLog, loadSeries, loadStreak, wipeAllStoredData } from '../utils/postureLog';
 import { saveSelfReport, getSelfReportLog } from '../utils/storage';
 import { parseTiltPayload } from '../utils/tilt';
 import { getPostureStatus } from '../utils/posture';
@@ -57,11 +60,16 @@ export function BeltProvider({ children }) {
 
   // ข้อมูลจริงที่บันทึกจากเข็มขัด: weekData = 7 วันล่าสุด (ใช้คิดคะแนน), chartData = ช่วงที่เลือกดูในกราฟ
   const [weekData, setWeekData] = useState([]);
+  const [prevWeekData, setPrevWeekData] = useState([]); // 7 วันก่อนหน้าสัปดาห์นี้ (ใช้เทียบ % การเปลี่ยนแปลง)
   const [chartRange, setChartRange] = useState('7d');
   const [chartData, setChartData] = useState([]);
   const [streak, setStreak] = useState(0); // จำนวนวันดี (ท่าไม่ดี < 30%) ติดต่อกัน
+  const [confettiKey, setConfettiKey] = useState(0); // เพิ่มทีละ 1 ทุกครั้งที่ streak เพิ่มเป็นวันใหม่ -> ยิง confetti
+  const celebrationRef = useRef(null); // { streak, celebratedOn } ที่เก็บไว้ (null = ยังไม่เคย/ยังไม่โหลด)
+  const celebrationLoadRef = useRef(null); // promise โหลดสถานะฉลองครั้งเดียว (ให้ refreshHistory ที่ซ้อนกันรอผลเดียวกัน)
   const { score, tier, lowData } = calculateWeeklyScore(weekData);
   const readiness = getReadinessMessage(tier);
+  const weekChange = computeWeekChange(score, calculateWeeklyScore(prevWeekData).score); // null = ไม่มีข้อมูลสัปดาห์ก่อน -> ไม่แสดง
 
   const [selfRating, setSelfRating] = useState(null);
   const todayKey = getLocalDateKey();
@@ -71,7 +79,15 @@ export function BeltProvider({ children }) {
 
   // เตือนนั่งนาน = นั่งต่อเนื่องถึงเวลาที่ผู้ใช้ตั้งไว้ (คำนวณจากเวลานั่งเทียบกับค่าที่ตั้งเสมอ
   // จึงปรับค่าตอนกำลังนั่งอยู่แล้วมีผลทันที และหลุดการเชื่อมต่อ = เวลานั่งเป็น 0 = ไม่เตือน)
-  const isAlert = isConnected && sittingTime >= settings.sittingAlertMinutes;
+  // กด "ยืดเส้น/ลุกแล้ว" = ซ่อนเตือนจนกว่าจะนั่งต่ออีกครบเวลาที่ตั้ง (ไม่รีเซ็ตเวลานั่ง; เวลานั่งยังเดินต่อ) แล้วเตือนรอบใหม่
+  const [alertDismissedUntil, setAlertDismissedUntil] = useState(null); // เวลานั่ง (นาที) ที่เตือนรอบใหม่จะกลับมา
+  const isAlert =
+    isConnected && sittingTime >= settings.sittingAlertMinutes && (alertDismissedUntil === null || sittingTime >= alertDismissedUntil);
+
+  // จำนวนครั้งที่ลุกยืดเส้นต่อวัน (เก็บในเครื่อง)
+  const [stretchLog, setStretchLog] = useState({});
+  const stretchLogRef = useRef({});
+  const stretchLoadRef = useRef(null);
 
   const chartRangeRef = useRef('7d'); // ค่าล่าสุดของ chartRange สำหรับ callback ที่ผูกไว้ตอนเชื่อมต่อ (กัน closure ค้างค่าเก่า)
   chartRangeRef.current = chartRange;
@@ -83,6 +99,10 @@ export function BeltProvider({ children }) {
       settingsRef.current = loaded;
       setSettings(loaded);
       setSettingsReady(true);
+      stretchLoadRef.current = loadStretchLog().then((log) => {
+        stretchLogRef.current = log;
+        setStretchLog(log);
+      });
       const reportLog = await getSelfReportLog();
       if (reportLog[todayKey]) setSelfRating(reportLog[todayKey]);
     })();
@@ -109,10 +129,21 @@ export function BeltProvider({ children }) {
       sittingSecondsRef.current = 0;
       setSittingTime(0);
       setIsPaused(false);
+      setAlertDismissedUntil(null); // เวลานั่งเริ่มใหม่ ไม่ต้องจำการกดยืดเส้นของรอบเก่า
     }
   }, [isConnected]);
 
   const togglePause = () => setIsPaused((p) => !p);
+
+  // ผู้ใช้ยืนยันว่าลุก/ยืดเส้นแล้ว: ซ่อนเตือนรอบนี้ + นับเพิ่ม 1 ครั้งของวันนี้ (ไม่รีเซ็ตเวลานั่ง)
+  const confirmStretch = async () => {
+    setAlertDismissedUntil(sittingTime + settings.sittingAlertMinutes);
+    if (stretchLoadRef.current) await stretchLoadRef.current; // รอโหลดข้อมูลเดิมก่อน กันเขียนทับ
+    const next = addStretch(stretchLogRef.current, getLocalDateKey());
+    stretchLogRef.current = next;
+    setStretchLog(next);
+    await saveStretchLog(next);
+  };
 
   // ---------- เตือนท่านั่งไม่ดี ----------
   // ผิดท่าต่อเนื่อง BAD_POSTURE_SECONDS วินาทีถึงจะเตือน; กลับมาท่าดีเมื่อไหร่เตือนหายและเริ่มนับใหม่
@@ -142,15 +173,38 @@ export function BeltProvider({ children }) {
     if (isAlert) notifySittingTooLong();
   }, [isAlert]);
 
+  // ---------- ฉลอง streak ----------
+  // เรียกทุกครั้งที่โหลด streak ใหม่: ส่วนหลัง await ไม่มีการรอคั่น จึงไม่ยิงซ้ำแม้ refreshHistory ซ้อนกัน
+  const checkStreakCelebration = async (newStreak) => {
+    if (!celebrationLoadRef.current) {
+      celebrationLoadRef.current = loadCelebrationState().then((s) => {
+        celebrationRef.current = s;
+      });
+    }
+    await celebrationLoadRef.current;
+    const { celebrate, next } = decideCelebration(newStreak, celebrationRef.current, getLocalDateKey());
+    celebrationRef.current = next;
+    saveCelebrationState(next);
+    if (celebrate) setConfettiKey((k) => k + 1);
+  };
+
   // ---------- ประวัติท่านั่ง ----------
+  const historySeqRef = useRef(0); // เลขรอบโหลดล่าสุด: รอบเก่าที่เสร็จช้ากว่า (เช่น โหลดค้างตอนกดล้างข้อมูล) ไม่เขียนทับผลของรอบใหม่
   const refreshHistory = async () => {
+    const seq = ++historySeqRef.current;
     try {
       const range = chartRangeRef.current;
       const selfReports = await getSelfReportLog(); // คะแนนรายวันต้องหักตาม self-report ของวันนั้น ๆ
       const week = applyDayScores(await loadSeries('7d'), selfReports);
+      const prevWeek = applyDayScores(await loadSeries('prev7d'), selfReports);
+      const chart = range === '7d' ? week : applyDayScores(await loadSeries(range), selfReports);
+      const newStreak = await loadStreak();
+      if (seq !== historySeqRef.current) return;
       setWeekData(week);
-      setChartData(range === '7d' ? week : applyDayScores(await loadSeries(range), selfReports));
-      setStreak(await loadStreak());
+      setPrevWeekData(prevWeek);
+      setChartData(chart);
+      setStreak(newStreak);
+      await checkStreakCelebration(newStreak);
     } catch (e) {
       console.log('โหลดประวัติท่านั่งไม่สำเร็จ', e);
     }
@@ -286,12 +340,42 @@ export function BeltProvider({ children }) {
 
   const connectLabel = isConnecting ? 'กำลังเชื่อมต่อ...' : isConnected ? 'ตัดการเชื่อมต่อ' : 'เชื่อมต่อ Bluetooth';
 
+  // ---------- ล้างข้อมูลทั้งหมด ----------
+  // ลบทุกอย่างที่เก็บในเครื่อง แล้วรีเซ็ตสถานะในหน่วยความจำให้เป็นค่าเริ่มต้น
+  // ไม่แตะ Bluetooth: ยังเชื่อมต่อต่อได้ และตัวจับเวลานั่งที่กำลังเดินอยู่ก็เดินต่อ (ไม่ใช่ข้อมูลที่เก็บไว้) ข้อมูลที่เข็มขัดส่งมาหลังจากนี้จะเริ่มบันทึกใหม่
+  const clearAllData = async () => {
+    await wipeAllStoredData();
+    const defaults = { ...DEFAULT_SETTINGS };
+    settingsRef.current = defaults;
+    setSettings(defaults);
+    setSelfRating(null);
+    stretchLogRef.current = {};
+    stretchLoadRef.current = null;
+    setStretchLog({});
+    celebrationRef.current = null; // baseline streak เริ่มใหม่ (ไม่ฉลองจากข้อมูลที่เพิ่งล้าง)
+    celebrationLoadRef.current = null;
+    chartRangeRef.current = '7d';
+    setChartRange('7d');
+    await refreshHistory();
+  };
+
   // ---------- Self-report ----------
   const saveRating = async (rating) => {
     setSelfRating(rating);
     await saveSelfReport(todayKey, rating);
     await refreshHistory(); // self-report มีผลต่อคะแนนและกราฟ: คำนวณใหม่ทันที
   };
+
+  // สถานะภาพรวมบน Home (เขียว/เหลือง/แดง/เทา) คำนวณจากสถานะที่มีอยู่แล้วทั้งหมด (ประกาศ postureAlert แล้วตรงนี้)
+  const overallStatus = getOverallStatus({
+    isConnected,
+    isPaused,
+    postureAlert,
+    isAlert,
+    sittingTime,
+    nextAlertAt: alertDismissedUntil === null ? settings.sittingAlertMinutes : alertDismissedUntil,
+    limitMinutes: settings.sittingAlertMinutes,
+  });
 
   const value = {
     // Bluetooth
@@ -306,14 +390,21 @@ export function BeltProvider({ children }) {
     postureAlert,
     sittingTime,
     isAlert,
+    overallStatus,
+    confirmStretch,
+    stretchToday: stretchLog[todayKey] || 0,
+    stretchInWeek: countInKeys(stretchLog, weekData.map((d) => d.dateKey)),
+    stretchInChart: countInKeys(stretchLog, chartData.map((d) => d.dateKey)),
     isPaused,
     togglePause,
     // การตั้งค่า
     settings,
     settingsReady,
     updateSettings,
+    clearAllData,
     // ประวัติ + คะแนน
     streak,
+    confettiKey,
     weekData,
     chartRange,
     setChartRange,
@@ -321,6 +412,7 @@ export function BeltProvider({ children }) {
     score,
     tier,
     lowData,
+    weekChange,
     readiness,
     // self-report
     selfRating,

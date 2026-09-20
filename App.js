@@ -7,9 +7,11 @@ import { History, Home, Settings } from 'lucide-react-native';
 import { BeltProvider, useBelt } from './context/BeltContext';
 import { IconBadge, COLORS } from './components/ui';
 import { useTheme } from './components/theme';
+import { StreakConfetti } from './components/StreakConfetti';
 import HomeScreen from './screens/HomeScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import AboutScreen from './screens/AboutScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -32,25 +34,33 @@ function AppShell() {
   const navTheme = { ...base, colors: { ...base.colors, background: t.bg, card: t.tabBar, border: t.tabBorder, text: t.text } };
 
   return (
-    <NavigationContainer theme={navTheme}>
-      <StatusBar style={t.isDark ? 'light' : 'dark'} />
-      <Tab.Navigator
+    <>
+      <NavigationContainer theme={navTheme}>
+        <StatusBar style={t.isDark ? 'light' : 'dark'} />
+        <Tab.Navigator
+          backBehavior="history" // ปุ่มย้อนกลับของเครื่อง: ย้อนไปหน้าที่เปิดก่อนหน้า (เช่น จากเกี่ยวกับแอป กลับตั้งค่า)
         screenOptions={({ route }) => ({
-          headerShown: false,
-          tabBarActiveTintColor: TAB_ICONS[route.name].color,
-          tabBarInactiveTintColor: t.faint,
-          tabBarStyle: { backgroundColor: t.tabBar, borderTopColor: t.tabBorder },
-          tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
-          tabBarIcon: ({ focused }) => (
-            <IconBadge Icon={TAB_ICONS[route.name].Icon} color={TAB_ICONS[route.name].color} active={focused} size={18} box={32} />
-          ),
-        })}
-      >
-        <Tab.Screen name="Home" component={HomeScreen} options={{ tabBarLabel: 'หน้าหลัก' }} />
-        <Tab.Screen name="History" component={HistoryScreen} options={{ tabBarLabel: 'ประวัติ' }} />
-        <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarLabel: 'ตั้งค่า' }} />
-      </Tab.Navigator>
-    </NavigationContainer>
+            headerShown: false,
+            animation: 'fade', // สลับแท็บแบบค่อยๆ เฟด (ตัวเลือกในตัวของ bottom-tabs: none | fade | shift)
+            tabBarActiveTintColor: (TAB_ICONS[route.name] || TAB_ICONS.Settings).color,
+            tabBarInactiveTintColor: t.faint,
+            tabBarStyle: { backgroundColor: t.tabBar, borderTopColor: t.tabBorder },
+            tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
+            tabBarIcon: ({ focused }) => (
+              <IconBadge Icon={(TAB_ICONS[route.name] || TAB_ICONS.Settings).Icon} color={(TAB_ICONS[route.name] || TAB_ICONS.Settings).color} active={focused} size={18} box={32} />
+            ),
+          })}
+        >
+          <Tab.Screen name="Home" component={HomeScreen} options={{ tabBarLabel: 'หน้าหลัก' }} />
+          <Tab.Screen name="History" component={HistoryScreen} options={{ tabBarLabel: 'ประวัติ' }} />
+          <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarLabel: 'ตั้งค่า' }} />
+          {/* หน้าเกี่ยวกับแอป: ไม่ขึ้นในแถบแท็บ (เปิดจากปุ่มในหน้าตั้งค่า) */}
+          <Tab.Screen name="About" component={AboutScreen} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }} />
+        </Tab.Navigator>
+      </NavigationContainer>
+      {/* ชั้นฉลอง streak วางทับทุกหน้า */}
+      <StreakConfetti />
+    </>
   );
 }
 

@@ -27,6 +27,17 @@ function mergeInto(target, source) {
   });
 }
 
+// ล้างข้อมูลทั้งหมดในเครื่อง: ล้าง AsyncStorage ทั้งหมด + ทิ้งค่าท่านั่งที่ค้างในหน่วยความจำ (ประวัติ, self-report, ตั้งค่า, streak ฯลฯ)
+// ทำผ่านคิวเดียวกับการเขียน จึงรอให้งานเขียนที่ค้างอยู่เสร็จก่อน และไม่มีงานเขียนเก่ามาเขียนทับหลังล้าง
+export function wipeAllStoredData() {
+  const run = writeQueue.then(async () => {
+    await AsyncStorage.clear();
+    Object.keys(pending).forEach((k) => delete pending[k]); // ทิ้งหลังล้างสำเร็จเท่านั้น (ล้างไม่สำเร็จ = ข้อมูลที่ค้างไม่หาย)
+  });
+  writeQueue = run.catch(() => {}); // ล้มเหลวไม่ทำให้คิวตาย (ผู้เรียกยังได้รับ error จาก run)
+  return run;
+}
+
 export function flushPostureLog() {
   writeQueue = writeQueue.then(async () => {
     const keys = Object.keys(pending);

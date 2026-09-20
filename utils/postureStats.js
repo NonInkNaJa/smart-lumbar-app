@@ -27,11 +27,15 @@ function addDays(date, n) {
 function summarize(label, keys, recordsByKey) {
   let good = 0;
   let bad = 0;
+  let hunched = 0;
+  let slumped = 0;
   keys.forEach((k) => {
     const r = recordsByKey[k];
     if (r) {
       good += r.goodSeconds || 0;
       bad += r.badSeconds || 0;
+      hunched += r.hunchedSeconds || 0;
+      slumped += r.slumpedSeconds || 0;
     }
   });
   const total = good + bad;
@@ -42,6 +46,33 @@ function summarize(label, keys, recordsByKey) {
     badPostureRatio: total > 0 ? bad / total : 0, // สัดส่วนเวลาที่นั่งท่าไม่ดี 0-1
     goodSeconds: good,
     badSeconds: bad,
+    hunchedSeconds: hunched, // วินาทีที่หลังค่อม (roll) — คนละตัวกับเอนหลัง: ช่วงเดียวกันอาจเป็นทั้งสองแบบพร้อมกัน
+    slumpedSeconds: slumped, // วินาทีที่เอนหลังไม่ดี (pitch)
+  };
+}
+
+// สาเหตุท่านั่งไม่ดีของช่วงที่เลือก เป็น % ของเวลาที่ตรวจวัดได้ทั้งช่วง (ไม่ใช่ % ของเฉพาะเวลาที่ท่าไม่ดี)
+// หลังค่อมกับเอนหลังนับแยกกัน และบางวินาทีเป็นทั้งสองอย่างพร้อมกันได้ ผลรวมสองค่าจึงอาจมากกว่าท่าไม่ดีทั้งหมด (overlap = true)
+// buckets: ผลของ buildSeries; ตรวจวัดรวมน้อยกว่า MIN_TRACKED_SECONDS = hasData false (ยังไม่มีข้อมูล)
+export function summarizeCauses(buckets) {
+  const list = Array.isArray(buckets) ? buckets : [];
+  let good = 0;
+  let bad = 0;
+  let hunched = 0;
+  let slumped = 0;
+  list.forEach((b) => {
+    good += b.goodSeconds || 0;
+    bad += b.badSeconds || 0;
+    hunched += b.hunchedSeconds || 0;
+    slumped += b.slumpedSeconds || 0;
+  });
+  const total = good + bad;
+  if (total < MIN_TRACKED_SECONDS) return { hasData: false, hunchedPercent: 0, slumpedPercent: 0, overlap: false };
+  return {
+    hasData: true,
+    hunchedPercent: Math.round((hunched / total) * 100),
+    slumpedPercent: Math.round((slumped / total) * 100),
+    overlap: hunched + slumped > bad,
   };
 }
 
@@ -62,11 +93,12 @@ function monthToDate(today) {
 function daysOfRange(range, today) {
   if (range === '1d') return [today];
   if (range === '7d') return lastNDays(today, 7);
+  if (range === 'prev7d') return lastNDays(addDays(today, -7), 7); // 7 วันก่อนหน้าช่วง 7d (ใช้เทียบกับสัปดาห์ก่อน)
   if (range === 'mtd') return monthToDate(today);
   return [];
 }
 
-// range: '1d' = วันนี้, '7d' = 7 วันล่าสุด, 'mtd' = ต้นเดือนถึงวันนี้ (แท่งละวัน)
+// range: '1d' = วันนี้, '7d' = 7 วันล่าสุด, 'prev7d' = 7 วันก่อนหน้านั้น, 'mtd' = ต้นเดือนถึงวันนี้ (แท่งละวัน)
 export function keysNeeded(range, today = new Date()) {
   return daysOfRange(range, today).map(getLocalDateKey);
 }
@@ -74,7 +106,7 @@ export function keysNeeded(range, today = new Date()) {
 export function buildSeries(range, recordsByKey, today = new Date()) {
   const days = daysOfRange(range, today);
   if (range === '1d') return [summarize('วันนี้', [getLocalDateKey(today)], recordsByKey)];
-  if (range === '7d') return days.map((d) => summarize(THAI_WEEKDAYS[d.getDay()], [getLocalDateKey(d)], recordsByKey));
+  if (range === '7d' || range === 'prev7d') return days.map((d) => summarize(THAI_WEEKDAYS[d.getDay()], [getLocalDateKey(d)], recordsByKey));
   if (range === 'mtd') return days.map((d) => summarize(String(d.getDate()), [getLocalDateKey(d)], recordsByKey));
   return [];
 }

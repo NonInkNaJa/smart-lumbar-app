@@ -1,11 +1,13 @@
 import React, { useMemo } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Activity, Bluetooth, CalendarDays, Clock, Flame, HeartPulse, Pause, Play } from 'lucide-react-native';
 import { APP_NAME_TH, APP_NAME_EN } from '../config';
 import { useBelt } from '../context/BeltContext';
 import { getRecommendedRoutine } from '../utils/postureScore';
 import { AlertBox, Button, Card, CardHeader, COLORS, IconBadge, Screen, ScreenTitle, useScreenStyles } from '../components/ui';
+import { BounceTouchable } from '../components/motion';
 import { Mascot } from '../components/Mascot';
+import { StatusBadge } from '../components/StatusBadge';
 import { useTheme } from '../components/theme';
 import { getStretchImage } from '../utils/images';
 
@@ -23,6 +25,8 @@ export default function HomeScreen() {
     connectLabel,
     sittingTime,
     isAlert,
+    confirmStretch,
+    stretchToday,
     isPaused,
     togglePause,
     tilt,
@@ -37,11 +41,14 @@ export default function HomeScreen() {
     <Screen>
       <ScrollView contentContainerStyle={screen.scrollContent}>
         {/* มาสคอตต้อนรับ อยู่บนสุดก่อนการ์ดแรก */}
-        <Mascot />
+        <Mascot tier={tier} />
         <ScreenTitle title={APP_NAME_TH} subtitle={APP_NAME_EN} />
 
+        {/* สถานะภาพรวม (เขียว/เหลือง/แดง) อยู่บนสุดก่อนการ์ดทั้งหมด */}
+        <StatusBadge />
+
         {/* Streak: วันดี (นั่งท่าไม่ดีต่ำกว่า 30% ของเวลา) ติดต่อกัน; ยังเป็น 0 ไม่โชว์ตัวเลข ให้กำลังใจแทน */}
-        <Card>
+        <Card index={0}>
           <View style={styles.streakRow}>
             <IconBadge Icon={Flame} color={streak > 0 ? COLORS.orange : COLORS.slate} box={44} size={24} active={streak > 0} />
             <Text style={[styles.streakText, streak === 0 && styles.streakTextEmpty]}>
@@ -51,7 +58,7 @@ export default function HomeScreen() {
         </Card>
 
         {/* การเชื่อมต่อ */}
-        <Card>
+        <Card index={1}>
           <CardHeader Icon={Bluetooth} color={isConnected ? COLORS.green : COLORS.slate} title="สถานะการเชื่อมต่อ" />
           <Text style={[styles.statusText, { color: isConnected ? COLORS.green : COLORS.red }]}>
             {isConnecting ? 'กำลังค้นหาเข็มขัด...' : isConnected ? 'เชื่อมต่อเข็มขัดแล้ว' : 'ยังไม่ได้เชื่อมต่อ'}
@@ -66,31 +73,42 @@ export default function HomeScreen() {
         </Card>
 
         {/* เวลานั่ง */}
-        <Card>
+        <Card index={2}>
           <View style={styles.timerHeaderRow}>
             <View style={styles.timerHeaderTitle}>
               <CardHeader Icon={Clock} color={COLORS.blue} title="ระยะเวลานั่งต่อเนื่อง" />
             </View>
             {/* ปุ่มเสริม: หยุดนับชั่วคราวโดยไม่ตัด Bluetooth (ค่าเริ่มต้นยังนับอัตโนมัติทันทีที่เชื่อมต่อ) */}
             {isConnected && (
-              <TouchableOpacity
+              <BounceTouchable
                 style={[styles.pauseButton, isPaused && styles.resumeButton]}
                 onPress={togglePause}
               >
                 {isPaused ? <Play color="#FFFFFF" size={14} /> : <Pause color="#FFFFFF" size={14} />}
                 <Text style={styles.pauseButtonText}>{isPaused ? 'เริ่มนับต่อ' : 'หยุดชั่วคราว'}</Text>
-              </TouchableOpacity>
+              </BounceTouchable>
             )}
           </View>
           <Text style={[styles.timerText, isPaused && styles.timerTextPaused]}>{sittingTime} นาที</Text>
           {isPaused && (
             <Text style={styles.pausedCaption}>หยุดนับชั่วคราว (ยังเชื่อมต่ออยู่) กด "เริ่มนับต่อ" เมื่อกลับมานั่ง</Text>
           )}
-          {isAlert && <AlertBox text="นั่งนานเกินกำหนด! ควรยืดกล้ามเนื้อ" />}
+          {isAlert && (
+            <View style={styles.alertRow}>
+              <View style={styles.alertBoxWrap}>
+                <AlertBox text="นั่งนานเกินกำหนด! ควรยืดกล้ามเนื้อ" />
+              </View>
+              {/* ยืนยันว่าลุก/ยืดเส้นแล้ว: ซ่อนเตือนรอบนี้ ไม่รีเซ็ตเวลานั่ง */}
+              <BounceTouchable style={styles.stretchButton} onPress={confirmStretch}>
+                <Text style={styles.stretchButtonText}>ยืดเส้นแล้ว ✓</Text>
+              </BounceTouchable>
+            </View>
+          )}
+          {stretchToday > 0 && <Text style={styles.stretchCount}>วันนี้ลุกยืดเส้นแล้ว {stretchToday} ครั้ง 🙆</Text>}
         </Card>
 
         {/* มุมเอียงจากเซนเซอร์ (สด) */}
-        <Card>
+        <Card index={3}>
           <CardHeader Icon={Activity} color={COLORS.purple} title="มุมเอียงลำตัว" />
           {tilt ? (
             <View style={styles.tiltRow}>
@@ -113,7 +131,7 @@ export default function HomeScreen() {
         </Card>
 
         {/* ท่ายืดเหยียดที่แนะนำวันนี้ */}
-        <Card>
+        <Card index={4}>
           <CardHeader Icon={CalendarDays} color={COLORS.amber} title="ท่ายืดเหยียดที่แนะนำวันนี้" />
           {getRecommendedRoutine(tier).map((ex, i) => {
             const image = getStretchImage(ex.name);
@@ -140,19 +158,19 @@ export default function HomeScreen() {
         </Card>
 
         {/* Self-report: บันทึกอย่างเดียว ไม่แสดงผลต่อคะแนนให้ผู้ใช้เห็น (ตัวคำนวณคะแนนใช้ค่านี้ข้างหลัง) */}
-        <Card>
+        <Card index={5}>
           <CardHeader Icon={HeartPulse} color={COLORS.red} title="วันนี้หลังตึงแค่ไหน?" />
           <View style={styles.ratingRow}>
             {RATING_EMOJIS.map((emoji, i) => {
               const value = i + 1;
               return (
-                <TouchableOpacity
+                <BounceTouchable
                   key={value}
                   style={[styles.ratingButton, selfRating === value && styles.ratingButtonSelected]}
                   onPress={() => saveRating(value)}
                 >
                   <Text style={styles.ratingEmoji}>{emoji}</Text>
-                </TouchableOpacity>
+                </BounceTouchable>
               );
             })}
           </View>
@@ -176,6 +194,11 @@ const makeStyles = (t) =>
     pauseButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.amber, borderRadius: 16, paddingVertical: 6, paddingHorizontal: 12, marginLeft: 8 },
     resumeButton: { backgroundColor: COLORS.green },
     pauseButtonText: { color: '#FFFFFF', fontWeight: '600', fontSize: 13, marginLeft: 6 },
+    alertRow: { flexDirection: 'row', alignItems: 'stretch' },
+    alertBoxWrap: { flex: 1 },
+    stretchButton: { marginTop: 10, marginLeft: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: COLORS.green, alignItems: 'center', justifyContent: 'center' },
+    stretchButtonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 13 },
+    stretchCount: { fontSize: 13, color: COLORS.green, fontWeight: '600', textAlign: 'center', marginTop: 6 },
     timerTextPaused: { color: t.faint },
     pausedCaption: { fontSize: 12, color: t.faint, textAlign: 'center', marginBottom: 4 },
     tiltRow: { flexDirection: 'row', justifyContent: 'space-around' },

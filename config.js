@@ -20,6 +20,19 @@ export const CHARACTERISTIC_UUID = '002cf995-2911-4bc5-9143-3991ef0d6cf6';
 
 export const FLUSH_INTERVAL_MS = 15 * 1000; // เขียนข้อมูลท่านั่งลงเครื่องทุกๆ 15 วินาที
 
+export const SCORE_ANIMATION_MS = 700; // ตัวเลขคะแนนนับขึ้น/ลงใช้เวลากี่มิลลิวินาที (0 = เปลี่ยนทันที)
+
+// สถานะภาพรวมบน Home: นั่งถึงกี่ส่วนของเวลาเตือนนั่งนานแล้วเปลี่ยนเป็น "ควรระวัง" (0.8 = ถึง 80%)
+export const STATUS_WARN_RATIO = 0.8;
+
+// Confetti ฉลองเมื่อ streak เพิ่มเป็นวันใหม่
+export const STREAK_CONFETTI_COUNT = 150; // จำนวนชิ้นกระดาษ
+export const STREAK_CONFETTI_COLORS = ['#F97316', '#10B981', '#3B82F6', '#A855F7', '#F59E0B', '#EF4444'];
+
+// Animation ของการ์ด: ค่อยๆ ขึ้น (fade-in) ทีละใบตอนโหลดหน้า
+export const CARD_FADE_MS = 350; // ใช้เวลาขึ้นกี่มิลลิวินาที
+export const CARD_STAGGER_MS = 60; // การ์ดใบถัดไปเริ่มช้ากว่าใบก่อนกี่มิลลิวินาที
+
 export const CHART_RANGES = [
   { key: '1d', label: 'วันนี้' },
   { key: '7d', label: '7 วัน' },

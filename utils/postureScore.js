@@ -81,6 +81,16 @@ export function calculateWeeklyScore(dailyData) {
   };
 }
 
+// เปลี่ยนแปลงเทียบสัปดาห์ก่อน (%) = (สัปดาห์นี้ - สัปดาห์ก่อน) / สัปดาห์ก่อน x 100 ปัดเป็นจำนวนเต็ม
+// คืน null (= ไม่แสดง) เมื่อไม่มีข้อมูลสัปดาห์นี้/สัปดาห์ก่อน หรือคะแนนสัปดาห์ก่อนเป็น 0 (หารเป็น % ไม่ได้)
+// คะแนนสูง = พร้อม จึง up = ดีขึ้น, down = แย่ลง
+export function computeWeekChange(currentScore, previousScore) {
+  if (typeof currentScore !== 'number' || typeof previousScore !== 'number') return null;
+  if (!Number.isFinite(currentScore) || !Number.isFinite(previousScore) || previousScore <= 0) return null;
+  const percent = Math.round(((currentScore - previousScore) / previousScore) * 100) || 0; // || 0 กัน -0
+  return { percent, direction: percent > 0 ? 'up' : percent < 0 ? 'down' : 'same' };
+}
+
 export function getReadinessMessage(tier) {
   switch (tier) {
     case 'low':

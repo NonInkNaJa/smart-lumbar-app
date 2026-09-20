@@ -1,8 +1,11 @@
 import React, { useMemo } from 'react';
-import { Image, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ShieldAlert } from 'lucide-react-native';
+import { CARD_FADE_MS, CARD_STAGGER_MS } from '../config';
 import { useTheme } from './theme';
+import { BounceTouchable } from './motion';
 import { BACKGROUND_IMAGE } from '../utils/images';
 
 // สีสื่อความหมาย (ไม่เปลี่ยนตามโหมดสว่าง/มืด) ส่วนสีพื้นหลัง/ข้อความอยู่ใน components/theme.js
@@ -89,9 +92,14 @@ export function IconBadge({ Icon, color = COLORS.blue, size = 20, box = 36, acti
   );
 }
 
-export function Card({ children, style }) {
+// index = ลำดับของการ์ดในหน้า: ใบถัดไปเริ่มขึ้นช้ากว่าใบก่อนเล็กน้อย (fade-in ไล่ทีละใบตอนโหลดหน้า)
+export function Card({ children, style, index = 0 }) {
   const styles = useUiStyles();
-  return <View style={[styles.card, style]}>{children}</View>;
+  return (
+    <Animated.View entering={FadeInDown.duration(CARD_FADE_MS).delay(index * CARD_STAGGER_MS)} style={[styles.card, style]}>
+      {children}
+    </Animated.View>
+  );
 }
 
 export function CardHeader({ Icon, color, title }) {
@@ -117,13 +125,13 @@ export function ScreenTitle({ title, subtitle }) {
 export function Button({ label, onPress, color = COLORS.blue, disabled = false, style }) {
   const styles = useUiStyles();
   return (
-    <TouchableOpacity
+    <BounceTouchable
       style={[styles.button, { backgroundColor: disabled ? '#9CA3AF' : color }, style]}
       onPress={onPress}
       disabled={disabled}
     >
       <Text style={styles.buttonText}>{label}</Text>
-    </TouchableOpacity>
+    </BounceTouchable>
   );
 }
 
