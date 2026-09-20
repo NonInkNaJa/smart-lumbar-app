@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { Bell, Bluetooth, ChevronRight, Info, Moon, Radio, Sun, Timer, Trash2 } from 'lucide-react-native';
+import { Bell, Bluetooth, ChevronRight, Info, LayoutGrid, Moon, Radio, Sun, Timer, Trash2 } from 'lucide-react-native';
 import appConfig from '../app.json';
 import { APP_NAME_TH, DEVICE_NAME, SITTING_ALERT_MAX_MINUTES, SITTING_ALERT_MIN_MINUTES } from '../config';
 import { parseSittingMinutes } from '../utils/settings';
@@ -11,7 +11,7 @@ import { BounceTouchable } from '../components/motion';
 import { useTheme } from '../components/theme';
 
 export default function SettingsScreen({ navigation }) {
-  const { isConnected, isConnecting, errorMsg, toggleConnection, connectLabel, settings, updateSettings, clearAllData, serviceStatus, backgroundServiceAvailable, openBatterySettings } = useBelt();
+  const { isConnected, isConnecting, errorMsg, toggleConnection, connectLabel, settings, updateSettings, clearAllData, serviceStatus, backgroundServiceAvailable, homeWidgetAvailable, openBatterySettings } = useBelt();
   const [batteryNote, setBatteryNote] = useState(null); // ผลของปุ่มเปิดตั้งค่าแบตเตอรี่ (แสดงเมื่อเปิดไม่ได้)
   const [clearing, setClearing] = useState(false); // กำลังล้างข้อมูล (กันกดซ้ำ)
   const theme = useTheme();
@@ -173,8 +173,17 @@ export default function SettingsScreen({ navigation }) {
           {batteryNote && <Text style={styles.errorText}>{batteryNote}</Text>}
         </Card>
 
-        {/* ทดสอบแจ้งเตือน */}
+        {/* วิดเจ็ตหน้าจอหลัก */}
         <Card index={4}>
+          <CardHeader Icon={LayoutGrid} color={COLORS.blue} title="วิดเจ็ตหน้าจอหลัก" />
+          <Text style={styles.infoLine}>แสดงคะแนนความพร้อมและสถานะเชื่อมต่อเข็มขัดบนหน้าจอหลักของมือถือ โดยไม่ต้องเปิดแอป</Text>
+          <Text style={styles.infoLine}>วิธีเพิ่ม: กดค้างที่พื้นที่ว่างบนหน้าจอหลัก &gt; วิดเจ็ต &gt; หลังเทพ</Text>
+          <Text style={styles.infoLine}>อัปเดตเมื่อคะแนนหรือสถานะเปลี่ยน และอย่างน้อยทุก ~30 นาที (ตอนเชื่อมต่อเข็มขัดอยู่ส่งสถานะทุก ~5 นาที) ถ้าแอปไม่ได้ทำงานอยู่ วิดเจ็ตจะแสดงว่ายังไม่ได้เชื่อมต่อ</Text>
+          {!homeWidgetAvailable && <Text style={styles.batteryHint}>ใช้ได้เฉพาะแอปที่ติดตั้งบน Android (APK) — เครื่อง/แอปนี้ยังไม่รองรับ</Text>}
+        </Card>
+
+        {/* ทดสอบแจ้งเตือน */}
+        <Card index={5}>
           <CardHeader Icon={Bell} color={COLORS.amber} title="ทดสอบการแจ้งเตือน" />
           <Text style={styles.infoLine}>กดเพื่อดูว่าเครื่องนี้แสดงป๊อปอัพและสั่นหรือไม่ (ไม่ต้องเชื่อมต่อเข็มขัด)</Text>
           <Button label="ทดสอบเตือนท่านั่งไม่ดี" onPress={() => notifyBadPosture('หลังค่อม')} color={COLORS.amber} />
@@ -182,7 +191,7 @@ export default function SettingsScreen({ navigation }) {
         </Card>
 
         {/* ล้างข้อมูลทั้งหมด */}
-        <Card index={5}>
+        <Card index={6}>
           <CardHeader Icon={Trash2} color={COLORS.red} title="จัดการข้อมูล" />
           <Text style={styles.infoLine}>
             ลบประวัติท่านั่ง คะแนน streak การประเมินความตึง และจำนวนครั้งที่ลุกยืดเส้น พร้อมคืนการตั้งค่าเป็นค่าเริ่มต้น (ไม่ตัดการเชื่อมต่อ Bluetooth)
@@ -191,7 +200,7 @@ export default function SettingsScreen({ navigation }) {
         </Card>
 
         {/* เกี่ยวกับแอป: ชื่อ/เวอร์ชัน/ฮาร์ดแวร์/เกณฑ์ อยู่ในหน้าแยก */}
-        <Card index={6}>
+        <Card index={7}>
           <BounceTouchable style={styles.linkRow} onPress={() => navigation.navigate('About')} accessibilityLabel="เปิดหน้าเกี่ยวกับแอป">
             <IconBadge Icon={Info} color={COLORS.purple} />
             <View style={styles.linkText}>

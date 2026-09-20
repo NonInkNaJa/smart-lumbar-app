@@ -22,6 +22,9 @@ export const FLUSH_INTERVAL_MS = 15 * 1000; // เขียนข้อมูล
 
 export const SCORE_ANIMATION_MS = 700; // ตัวเลขคะแนนนับขึ้น/ลงใช้เวลากี่มิลลิวินาที (0 = เปลี่ยนทันที)
 
+// วิดเจ็ตหน้าจอหลัก: ส่งสถานะซ้ำอย่างน้อยทุกกี่ ms ตอนเชื่อมต่อเข็มขัดอยู่ (ให้วิดเจ็ตรู้ว่าแอปยังทำงานอยู่ ตัววิดเจ็ตถือว่า "เชื่อมต่อแล้ว" ได้ไม่เกิน 10 นาทีหลังส่งล่าสุด)
+export const WIDGET_HEARTBEAT_MS = 5 * 60 * 1000;
+
 // การแจ้งเตือนถาวรของ foreground service (ตอนแอปรับข้อมูลจากเข็มขัดอยู่เบื้องหลัง)
 export const SERVICE_VERIFY_DELAY_MS = 1500; // สั่งเริ่ม service แล้วรอกี่ ms ก่อนตรวจว่าขึ้นจริง (startForeground ทำงานแบบอะซิงก์)
 export const BACKGROUND_SERVICE_TITLE = 'หลังเทพ กำลังทำงานอยู่';

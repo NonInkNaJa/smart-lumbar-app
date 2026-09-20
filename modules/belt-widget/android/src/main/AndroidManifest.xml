@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!-- วิดเจ็ตหน้าจอหลัก: แสดงคะแนนความพร้อมและสถานะเชื่อมต่อเข็มขัด -->
+    <receiver
+      android:name=".BeltWidgetProvider"
+      android:exported="true"
+      android:label="@string/belt_widget_label">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/belt_widget_info" />
+    </receiver>
+  </application>
+</manifest>

@@ -8,6 +8,7 @@ import {
   BAD_POSTURE_SECONDS,
   FLUSH_INTERVAL_MS,
   SERVICE_VERIFY_DELAY_MS,
+  WIDGET_HEARTBEAT_MS,
 } from '../config';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, sanitizeSettings } from '../utils/settings';
 import { applyDayScores, calculateWeeklyScore, computeWeekChange, getReadinessMessage } from '../utils/postureScore';
@@ -16,6 +17,7 @@ import { getOverallStatus } from '../utils/overallStatus';
 import { elapsedSince } from '../utils/sittingClock';
 import { buildDailySummary, pickSummaryDay } from '../utils/dailySummary';
 import { loadPainLog, regionsOf, savePainLog, setNoPain, toggleRegion } from '../utils/painLog';
+import { isHomeWidgetAvailable, updateHomeWidget } from '../utils/homeWidget';
 import { loadSummaryShownDate, saveSummaryShownDate } from '../utils/summaryState';
 import {
   isBackgroundServiceAvailable,
@@ -75,6 +77,7 @@ export function BeltProvider({ children }) {
 
   // ข้อมูลจริงที่บันทึกจากเข็มขัด: weekData = 7 วันล่าสุด (ใช้คิดคะแนน), chartData = ช่วงที่เลือกดูในกราฟ
   const [weekData, setWeekData] = useState([]);
+  const [historyReady, setHistoryReady] = useState(false); // โหลดประวัติ/คะแนนครั้งแรกเสร็จแล้ว (ก่อนหน้านั้นคะแนนเป็น null ชั่วคราว ไม่ควรส่งไปทับวิดเจ็ต)
   const [prevWeekData, setPrevWeekData] = useState([]); // 7 วันก่อนหน้าสัปดาห์นี้ (ใช้เทียบ % การเปลี่ยนแปลง)
   const [chartRange, setChartRange] = useState('7d');
   const [chartData, setChartData] = useState([]);
@@ -283,6 +286,7 @@ export function BeltProvider({ children }) {
       setPrevWeekData(prevWeek);
       setChartData(chart);
       setStreak(newStreak);
+      setHistoryReady(true);
       await checkStreakCelebration(newStreak);
     } catch (e) {
       console.log('โหลดประวัติท่านั่งไม่สำเร็จ', e);
@@ -316,6 +320,7 @@ export function BeltProvider({ children }) {
         tickSittingClockRef.current();
         refreshHistory();
         checkDailySummary();
+        pushWidgetRef.current(true);
       }
     });
     return () => sub.remove();
@@ -398,6 +403,7 @@ export function BeltProvider({ children }) {
               const parsed = parseTiltPayload(characteristic?.value);
               if (parsed) {
                 setTilt(parsed);
+                pushWidgetRef.current(); // จังหวะส่งสถานะให้วิดเจ็ตซ้ำทุก ~5 นาที (ข้อมูลเข็มขัดมาแม้ตอนอยู่เบื้องหลัง)
                 // นับเวลาท่าดี/ไม่ดีลงบันทึกรายวัน (ข้ามตอนหยุดชั่วคราว: ไม่ได้นั่งอยู่ ไม่ให้ประวัติเพี้ยน)
                 if (!isPausedRef.current) {
                   recordPostureSample(getPostureStatus(parsed));
@@ -434,6 +440,27 @@ export function BeltProvider({ children }) {
   const toggleConnection = () => (isConnected ? disconnect() : connect());
 
   const connectLabel = isConnecting ? 'กำลังเชื่อมต่อ...' : isConnected ? 'ตัดการเชื่อมต่อ' : 'เชื่อมต่อ Bluetooth';
+
+  // ---------- วิดเจ็ตหน้าจอหลัก ----------
+  // ส่งคะแนน + สถานะเชื่อมต่อไปให้วิดเจ็ตเมื่อค่าเปลี่ยน และซ้ำทุก WIDGET_HEARTBEAT_MS ตอนเชื่อมต่ออยู่ (จังหวะจากข้อมูลเข็มขัด ทำงานตอนอยู่เบื้องหลังด้วย)
+  // ล้มเหลวเงียบๆ ได้: วิดเจ็ตเป็นส่วนเสริม ไม่กระทบแอปหลักและ background service
+  const widgetDataRef = useRef({ score: null, label: '', color: '#6B7280', connected: false });
+  const widgetLastPushRef = useRef({ at: 0, key: '' });
+  const pushWidgetRef = useRef(() => {});
+  const pushWidget = (force = false) => {
+    const d = widgetDataRef.current;
+    const key = `${d.score}|${d.label}|${d.color}|${d.connected}`;
+    const now = Date.now();
+    const last = widgetLastPushRef.current;
+    if (!force && key === last.key && now - last.at < WIDGET_HEARTBEAT_MS) return;
+    widgetLastPushRef.current = { at: now, key };
+    updateHomeWidget({ score: d.score, tierLabel: d.label, tierColor: d.color, connected: d.connected }); // ไม่ต้องรอ และไม่โยน error
+  };
+  widgetDataRef.current = { score, label: readiness.label, color: readiness.color, connected: isConnected };
+  pushWidgetRef.current = pushWidget;
+  useEffect(() => {
+    if (historyReady) pushWidget();
+  }, [historyReady, score, readiness.label, isConnected]);
 
   // ---------- บันทึกอาการปวด (body map) ----------
   // เก็บแยกจาก self-report แบบอิโมจิเดิม (ไม่แตะของเดิม) รายวันตามวันที่จริง; ใช้ ref ให้การแตะรัวๆ ต่อกันได้ไม่ทับกัน
@@ -562,6 +589,7 @@ export function BeltProvider({ children }) {
     settingsReady,
     updateSettings,
     serviceStatus,
+    homeWidgetAvailable: isHomeWidgetAvailable(),
     backgroundServiceAvailable: isBackgroundServiceAvailable(),
     openBatterySettings: openBatterySettingsNative,
     clearAllData,
