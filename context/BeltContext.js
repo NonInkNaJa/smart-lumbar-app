@@ -15,6 +15,7 @@ import { getLocalDateKey } from '../utils/postureStats';
 import { getOverallStatus } from '../utils/overallStatus';
 import { elapsedSince } from '../utils/sittingClock';
 import { buildDailySummary, pickSummaryDay } from '../utils/dailySummary';
+import { loadPainLog, regionsOf, savePainLog, setNoPain, toggleRegion } from '../utils/painLog';
 import { loadSummaryShownDate, saveSummaryShownDate } from '../utils/summaryState';
 import {
   isBackgroundServiceAvailable,
@@ -116,6 +117,10 @@ export function BeltProvider({ children }) {
       stretchLoadRef.current = loadStretchLog().then((log) => {
         stretchLogRef.current = log;
         setStretchLog(log);
+      });
+      painLoadRef.current = loadPainLog().then((log) => {
+        painLogRef.current = log;
+        setPainLog(log);
       });
       const reportLog = await getSelfReportLog();
       if (reportLog[todayKey]) setSelfRating(reportLog[todayKey]);
@@ -430,6 +435,22 @@ export function BeltProvider({ children }) {
 
   const connectLabel = isConnecting ? 'กำลังเชื่อมต่อ...' : isConnected ? 'ตัดการเชื่อมต่อ' : 'เชื่อมต่อ Bluetooth';
 
+  // ---------- บันทึกอาการปวด (body map) ----------
+  // เก็บแยกจาก self-report แบบอิโมจิเดิม (ไม่แตะของเดิม) รายวันตามวันที่จริง; ใช้ ref ให้การแตะรัวๆ ต่อกันได้ไม่ทับกัน
+  const [painLog, setPainLog] = useState({});
+  const painLogRef = useRef({});
+  const painLoadRef = useRef(null);
+  const applyPain = async (update) => {
+    if (painLoadRef.current) await painLoadRef.current; // รอโหลดข้อมูลเดิมก่อน กันเขียนทับ
+    const next = update(painLogRef.current, getLocalDateKey()); // วันที่จริง ณ ตอนแตะ (ไม่ใช้ค่าที่ค้างจากการวาดครั้งก่อน เผื่อข้ามเที่ยงคืน)
+    painLogRef.current = next;
+    setPainLog(next);
+    await savePainLog(next);
+  };
+  const togglePainRegion = (region) => applyPain((log, key) => toggleRegion(log, key, region));
+  const setNoPainToday = () => applyPain((log, key) => setNoPain(log, key));
+  const painToday = regionsOf(painLog, todayKey); // จุดที่ปวดวันนี้ | [] = บันทึกว่าไม่ปวด | null = ยังไม่ได้บันทึก
+
   // ---------- สรุปวันนี้ ----------
   // dailySummary = null (ปิดอยู่) | { data: สรุป | null (ยังไม่มีข้อมูล), auto: เด้งเอง? }
   const [dailySummary, setDailySummary] = useState(null);
@@ -490,6 +511,9 @@ export function BeltProvider({ children }) {
     celebrationRef.current = null; // baseline streak เริ่มใหม่ (ไม่ฉลองจากข้อมูลที่เพิ่งล้าง)
     summaryCheckedDayRef.current = null;
     setDailySummary(null);
+    painLogRef.current = {};
+    painLoadRef.current = null;
+    setPainLog({});
     celebrationLoadRef.current = null;
     chartRangeRef.current = '7d';
     setChartRange('7d');
@@ -541,6 +565,9 @@ export function BeltProvider({ children }) {
     backgroundServiceAvailable: isBackgroundServiceAvailable(),
     openBatterySettings: openBatterySettingsNative,
     clearAllData,
+    painToday,
+    togglePainRegion,
+    setNoPainToday,
     dailySummary,
     openDailySummary,
     closeDailySummary,

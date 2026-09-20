@@ -1,12 +1,14 @@
 import React, { useMemo } from 'react';
 import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Activity, Bluetooth, CalendarDays, ClipboardList, Clock, Flame, HeartPulse, Pause, Play } from 'lucide-react-native';
+import { Activity, Bluetooth, CalendarDays, ClipboardList, Clock, Flame, HeartPulse, Pause, PersonStanding, Play } from 'lucide-react-native';
 import { APP_NAME_TH, APP_NAME_EN } from '../config';
 import { useBelt } from '../context/BeltContext';
 import { getRecommendedRoutine } from '../utils/postureScore';
 import { AlertBox, Button, Card, CardHeader, COLORS, IconBadge, Screen, ScreenTitle, useScreenStyles } from '../components/ui';
 import { BounceTouchable } from '../components/motion';
 import { Mascot } from '../components/Mascot';
+import { BodyMap } from '../components/BodyMap';
+import { regionLabel } from '../utils/painLog';
 import { StatusBadge } from '../components/StatusBadge';
 import { useTheme } from '../components/theme';
 import { getStretchImage } from '../utils/images';
@@ -33,6 +35,9 @@ export default function HomeScreen() {
     postureAlert,
     tier,
     openDailySummary,
+    painToday,
+    togglePainRegion,
+    setNoPainToday,
   } = useBelt();
   const theme = useTheme();
   const screen = useScreenStyles();
@@ -182,6 +187,19 @@ export default function HomeScreen() {
           </View>
           {selfRating && <Text style={styles.savedText}>บันทึกแล้ว ✓</Text>}
         </Card>
+
+        {/* บันทึกอาการปวดแบบ body map: แยกจากข้อบนโดยสิ้นเชิง (เป็นข้อมูลเสริม ไม่กระทบคะแนน) */}
+        <Card index={6}>
+          <CardHeader Icon={PersonStanding} color={COLORS.orange} title="วันนี้ปวดตรงไหน?" />
+          <Text style={styles.painHint}>แตะจุดที่รู้สึกปวด แตะอีกครั้งเพื่อยกเลิก</Text>
+          <BodyMap selected={painToday || []} onToggle={togglePainRegion} />
+          <Text style={styles.painStatus}>
+            {painToday === null ? 'ยังไม่ได้บันทึกวันนี้' : painToday.length === 0 ? 'บันทึกแล้ว: วันนี้ไม่มีอาการปวด ✓' : `บันทึกแล้ว: ${painToday.map(regionLabel).join(', ')} ✓`}
+          </Text>
+          <BounceTouchable style={[styles.noPainButton, painToday && painToday.length === 0 && styles.noPainButtonOn]} onPress={setNoPainToday} accessibilityLabel="วันนี้ไม่มีอาการปวด">
+            <Text style={[styles.noPainText, painToday && painToday.length === 0 && styles.noPainTextOn]}>วันนี้ไม่มีอาการปวด</Text>
+          </BounceTouchable>
+        </Card>
       </ScrollView>
     </Screen>
   );
@@ -218,6 +236,12 @@ const makeStyles = (t) =>
     ratingButton: { padding: 10, borderRadius: 8, backgroundColor: t.surface },
     ratingButtonSelected: { backgroundColor: t.selected },
     ratingEmoji: { fontSize: 24 },
+    painHint: { fontSize: 13, color: t.muted, textAlign: 'center', marginBottom: 8 },
+    painStatus: { fontSize: 13, fontWeight: '600', color: t.text2, textAlign: 'center', marginTop: 10 },
+    noPainButton: { alignSelf: 'center', marginTop: 10, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 16, backgroundColor: t.surface2 },
+    noPainButtonOn: { backgroundColor: COLORS.green },
+    noPainText: { fontSize: 13, fontWeight: '600', color: t.text2 },
+    noPainTextOn: { color: '#FFFFFF' },
     savedText: { fontSize: 13, color: COLORS.green, textAlign: 'center', marginTop: 10 },
     exerciseRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: t.border },
     // รูปประกอบท่า: ต้นฉบับแนวนอน 1408x768 (อัตราส่วน ~1.83) แสดงเป็นรูปเล็กข้างชื่อท่า
