@@ -4,7 +4,7 @@ import { Activity, Share2 } from 'lucide-react-native';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { CHART_RANGES } from '../config';
-import { MIN_TRACKED_SECONDS, summarizeCauses } from '../utils/postureStats';
+import { MIN_TRACKED_SECONDS, PERIOD_MIN_COUNT, PERIOD_MIN_SECONDS, PERIOD_MIN_TOTAL_SECONDS, summarizeCauses, summarizePeriods } from '../utils/postureStats';
 import { getReadinessMessage } from '../utils/postureScore';
 import { useBelt } from '../context/BeltContext';
 import { Card, CardHeader, COLORS, Screen, ScreenTitle, useScreenStyles } from '../components/ui';
@@ -14,10 +14,10 @@ import { Mascot } from '../components/Mascot';
 import { useTheme } from '../components/theme';
 
 // แถวสาเหตุ: ป้าย + แถบสัดส่วน + เปอร์เซ็นต์ (แถบยาวตามเปอร์เซ็นต์ของเวลาที่ตรวจวัดทั้งช่วง)
-function CauseRow({ label, percent, color, styles }) {
+function CauseRow({ label, percent, color, styles, labelWidth }) {
   return (
     <View style={styles.causeRow}>
-      <Text style={styles.causeLabel}>{label}</Text>
+      <Text style={[styles.causeLabel, labelWidth ? { width: labelWidth } : null]}>{label}</Text>
       <View style={styles.causeTrack}>
         <View style={[styles.causeFill, { width: `${percent}%`, backgroundColor: color }]} />
       </View>
@@ -43,6 +43,8 @@ export default function HistoryScreen() {
       : `ตรวจวัดรวม ${Math.round(totalSec / 60)} นาที · ท่าไม่ดี ${Math.round((badSec / totalSec) * 100)}%`;
 
   const causes = summarizeCauses(chartData);
+  const periods = summarizePeriods(chartData); // ท่าไม่ดีเกิดบ่อยช่วงไหนของวัน (ช่วงที่เลือก)
+  const topPeriod = periods.rows.find((r) => r.isTop);
 
   const handleShare = async () => {
     try {
@@ -135,6 +137,43 @@ export default function HistoryScreen() {
                 <Text style={styles.causeNote}>ยังไม่มีข้อมูลในช่วงนี้</Text>
               )}
             </View>
+
+            {/* ช่วงเวลาที่ท่าไม่ดีเกิดบ่อย: เช้า 6-12 / บ่าย 12-18 / เย็น-ค่ำ 18-24 (% ของเวลาในช่วงนั้นที่ท่าไม่ดี) */}
+            <View style={styles.causeBox}>
+              <Text style={styles.causeTitle}>ช่วงเวลาที่ท่าไม่ดีบ่อย</Text>
+              {periods.enough ? (
+                <>
+                  {periods.rows.map((r) =>
+                    r.hasEnough ? (
+                      <CauseRow key={r.key} label={r.label} percent={r.badPercent} color={r.isTop ? COLORS.red : COLORS.amber} styles={styles} labelWidth={112} />
+                    ) : (
+                      <View key={r.key} style={styles.causeRow}>
+                        <Text style={[styles.causeLabel, { width: 112 }]}>{r.label}</Text>
+                        <Text style={styles.causeNote}>ข้อมูลยังน้อย</Text>
+                      </View>
+                    )
+                  )}
+                  <Text style={styles.periodSummary}>
+                    {periods.allGood
+                      ? 'ท่าดีทุกช่วงเวลา 🎉'
+                      : periods.tie
+                        ? 'ทุกช่วงเวลาใกล้เคียงกัน ยังไม่มีช่วงไหนเด่นชัด'
+                        : `ท่าไม่ดีเกิดบ่อยสุดช่วง${topPeriod.label} — ${topPeriod.badPercent}% ของเวลาในช่วงนั้น`}
+                  </Text>
+                  <Text style={styles.causeNote}>% = สัดส่วนเวลาที่ท่าไม่ดีภายในช่วงเวลานั้น</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.causeNote}>ยังมีข้อมูลตามช่วงเวลาไม่พอ ต้องใช้งานมากกว่านี้ก่อนถึงจะวิเคราะห์ได้แม่นยำ</Text>
+                  <Text style={styles.causeNote}>
+                    {periods.reason === 'too-few-periods'
+                      ? `ตอนนี้มีข้อมูลพอ ${periods.qualifyingCount} ช่วงเวลา (ต้องอย่างน้อย ${PERIOD_MIN_COUNT} ช่วง ช่วงละ ${PERIOD_MIN_SECONDS / 60} นาทีขึ้นไป)`
+                      : `ตอนนี้มีข้อมูลตามช่วงเวลา ${Math.round(periods.totalSeconds / 60)} นาที (ต้องอย่างน้อย ${PERIOD_MIN_TOTAL_SECONDS / 60} นาที และครอบคลุมอย่างน้อย ${PERIOD_MIN_COUNT} ช่วงเวลา)`}
+                  </Text>
+                  <Text style={styles.causeNote}>เริ่มบันทึกแยกช่วงเวลาตั้งแต่เวอร์ชันนี้ ข้อมูลที่บันทึกไว้ก่อนหน้าไม่ถูกนับ</Text>
+                </>
+              )}
+            </View>
           </Card>
         </ViewShot>
 
@@ -172,6 +211,7 @@ const makeStyles = (t) =>
     causeTrack: { flex: 1, height: 10, borderRadius: 5, backgroundColor: t.surface2, overflow: 'hidden' },
     causeFill: { height: 10, borderRadius: 5 },
     causePercent: { width: 44, fontSize: 13, fontWeight: '700', color: t.text, textAlign: 'right' },
+    periodSummary: { fontSize: 13, fontWeight: '700', color: t.text, marginTop: 4, marginBottom: 2 },
     causeNote: { fontSize: 11, color: t.faint, marginTop: 2 },
     stretchSummary: { fontSize: 12, color: t.muted, textAlign: 'center', marginTop: 4 },
     chartCaption: { fontSize: 11, color: t.faint, textAlign: 'center', marginTop: 10 },

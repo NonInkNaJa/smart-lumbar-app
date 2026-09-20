@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getLocalDateKey, emptyDay, keysNeeded, keysForLastDays, buildSeries, computeStreak } from './postureStats';
+import { getLocalDateKey, emptyDay, keysNeeded, keysForLastDays, buildSeries, computeStreak, periodOfHour, periodField } from './postureStats';
 
 const KEY_PREFIX = 'posture-log-'; // เช่น "posture-log-2026-09-19"
 
@@ -10,14 +10,18 @@ let writeQueue = Promise.resolve(); // เขียนทีละงาน ไ�
 
 // เรียกทุกครั้งที่ได้ค่า pitch/roll ใหม่ (ประมาณวินาทีละครั้ง) = นับเวลา 1 วินาที
 export function recordPostureSample(status, now = new Date()) {
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) return; // เวลาไม่ถูกต้อง: ไม่นับ (กันบันทึกลงคีย์วันที่มั่ว)
   const key = getLocalDateKey(now);
   const day = pending[key] || (pending[key] = emptyDay());
+  const period = periodOfHour(now.getHours()); // ช่วงเวลาของวัน (เช้า/บ่าย/เย็น/ดึก) ตามเวลาเครื่อง ณ ตอนนับ; เวลาผิดปกติ = ไม่แยกช่วง
   if (status.isBadPosture) {
     day.badSeconds += 1;
+    if (period) day[periodField('bad', period)] += 1;
     if (status.isHunched) day.hunchedSeconds += 1;
     if (status.isSlumped) day.slumpedSeconds += 1;
   } else {
     day.goodSeconds += 1;
+    if (period) day[periodField('good', period)] += 1;
   }
 }
 
