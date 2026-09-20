@@ -9,20 +9,22 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { getMascotImage } from '../utils/images';
+import { getMascotImage, getMascotVariant } from '../utils/images';
 import { getMascotMood } from '../utils/mascotMoods';
 import { useTheme } from './theme';
 
 // รูปมาสคอตต้นฉบับเป็นภาพแนวนอน 1408x768 พื้นครีม (ไม่โปร่งใส) ตัวการ์ตูนอยู่กลางภาพและเล็ก
-// จึงครอปเป็นวงกลมเฉพาะตัวมาสคอต (พิกัดเป็นพิกเซลของภาพต้นฉบับ: ศูนย์กลาง cx,cy รัศมี r ที่คลุมทั้งตัวรวมผ้าคลุมและเท้า)
+// จึงครอปเป็นวงกลมเฉพาะตัวมาสคอต (จุดครอปของแต่ละตัวอยู่ที่ MASCOT_VARIANTS ใน utils/images.js)
 const SRC_W = 1408;
 const SRC_H = 768;
-const CROP = { cx: 716, cy: 380, r: 330 };
 const RING = 4; // ความหนาขอบวงกลม (สีตามระดับ)
 
-// มาสคอตต้อนรับ: เด้งเบาๆ ตลอดเวลา (idle animation) และเปลี่ยนท่าทางตามระดับ (tier) ของคะแนนความพร้อม
-export function Mascot({ tier = 'no-data', size = 132 }) {
+// มาสคอต: เด้งเบาๆ ตลอดเวลา (idle animation) และเปลี่ยนท่าทางตามระดับ (tier) ของคะแนนความพร้อม
+// character = 'spine' (ตัวกระดูกสันหลัง หน้า Home) | 'heart' (ตัวหัวใจ หน้าประวัติ/เกี่ยวกับแอป)
+export function Mascot({ tier = 'no-data', size = 132, character = 'spine' }) {
   const mood = getMascotMood(tier);
+  const variant = getMascotVariant(character);
+  const CROP = variant.crop;
   const theme = useTheme();
   const lift = useSharedValue(0);
   const tilt = useSharedValue(mood.tilt);
@@ -70,8 +72,8 @@ export function Mascot({ tier = 'no-data', size = 132 }) {
           }}
         >
           <Image
-            source={getMascotImage(tier)}
-            accessibilityLabel={`มาสคอตหลังเทพ (${mood.label})`}
+            source={character === 'heart' ? variant.image : getMascotImage(tier)}
+            accessibilityLabel={`มาสคอต${variant.label} (${mood.label})`}
             resizeMode="stretch"
             style={{
               position: 'absolute',

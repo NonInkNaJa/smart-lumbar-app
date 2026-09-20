@@ -44,10 +44,62 @@ export function summarizeWeek(weekData) {
   };
 }
 
+// CSS แบบเต็ม (หน้าตาตามที่ออกแบบ) และแบบเรียบง่าย (ใช้เป็นตัวสำรองเมื่อแบบเต็มสร้าง PDF ไม่สำเร็จบนเครื่องบางรุ่น)
+function fullCss(color) {
+  return `
+  @page { margin: 28px; }
+  body { font-family: sans-serif; color: #111827; margin: 0; }
+  h1 { font-size: 22px; margin: 0 0 2px; }
+  .sub { font-size: 12px; color: #6B7280; margin-bottom: 18px; }
+  .box { border: 1px solid #E5E7EB; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .score { font-size: 46px; font-weight: bold; text-align: center; color: ${color}; margin: 4px 0; }
+  .tier { font-size: 16px; font-weight: bold; text-align: center; color: ${color}; }
+  .advice { font-size: 12px; color: #4B5563; text-align: center; margin-top: 6px; }
+  .note { font-size: 11px; color: #9CA3AF; text-align: center; margin-top: 6px; }
+  .change { font-size: 13px; text-align: center; margin-top: 8px; font-weight: bold; }
+  .h { font-size: 14px; font-weight: bold; margin-bottom: 8px; }
+  table.chart { width: 100%; border-collapse: collapse; }
+  td.col { text-align: center; vertical-align: bottom; height: 150px; }
+  .bar { width: 22px; margin: 0 auto; border-radius: 4px; }
+  .val { font-size: 10px; color: #6B7280; margin-bottom: 2px; }
+  .lbl { font-size: 11px; color: #4B5563; margin-top: 4px; }
+  .cap { font-size: 10px; color: #9CA3AF; text-align: center; margin-top: 6px; }
+  table.stats { width: 100%; border-collapse: collapse; }
+  table.stats td { font-size: 13px; padding: 4px 0; }
+  table.stats td.r { text-align: right; font-weight: bold; }
+  .foot { font-size: 10px; color: #9CA3AF; text-align: center; margin-top: 18px; }
+`;
+}
+function simpleCss(color) {
+  return `
+  body { font-family: sans-serif; color: #111827; margin: 12px; }
+  h1 { font-size: 20px; margin: 0 0 2px; }
+  .sub { font-size: 12px; color: #6B7280; margin-bottom: 14px; }
+  .box { padding: 8px 0; margin-bottom: 10px; }
+  .score { font-size: 42px; font-weight: bold; text-align: center; color: ${color}; }
+  .tier { font-size: 16px; font-weight: bold; text-align: center; color: ${color}; }
+  .advice { font-size: 12px; text-align: center; }
+  .note { font-size: 11px; text-align: center; }
+  .change { font-size: 13px; text-align: center; font-weight: bold; }
+  .h { font-size: 14px; font-weight: bold; margin-bottom: 6px; }
+  table.chart { width: 100%; }
+  td.col { text-align: center; vertical-align: bottom; height: 150px; }
+  .bar { width: 22px; margin: 0 auto; }
+  .val { font-size: 10px; }
+  .lbl { font-size: 11px; }
+  .cap { font-size: 10px; text-align: center; }
+  table.stats { width: 100%; }
+  table.stats td { font-size: 13px; padding: 3px 0; }
+  table.stats td.r { text-align: right; font-weight: bold; }
+  .foot { font-size: 10px; text-align: center; margin-top: 14px; }
+`;
+}
+
 // score: 0-100 หรือ null (ยังไม่มีข้อมูล); tier: low/moderate/high/no-data
 // weekData: [{ label, dateKey, hasData, score, tier, goodSeconds, badSeconds }]
 // weekChange (ไม่บังคับ): { percent, direction: up|down|same } จากการเทียบสัปดาห์ก่อน (ถ้ามี จะแสดงในรายงานด้วย)
-export function buildWeeklyReportHtml({ score, tier, lowData, weekData, streak, weekChange, stretchCount, now = new Date() }) {
+// simple = true: HTML/CSS แบบเรียบง่ายสุด (ตัวสำรองตอนสร้าง PDF ไม่สำเร็จ) เนื้อหาเหมือนกันทุกอย่าง
+export function buildWeeklyReportHtml({ score, tier, lowData, weekData, streak, weekChange, stretchCount, simple = false, now = new Date() }) {
   const readiness = getReadinessMessage(tier);
   const days = Array.isArray(weekData) ? weekData : [];
   const summary = summarizeWeek(days);
@@ -76,27 +128,7 @@ export function buildWeeklyReportHtml({ score, tier, lowData, weekData, streak, 
   return `<!DOCTYPE html>
 <html lang="th"><head><meta charset="utf-8" />
 <style>
-  @page { margin: 28px; }
-  body { font-family: sans-serif; color: #111827; margin: 0; }
-  h1 { font-size: 22px; margin: 0 0 2px; }
-  .sub { font-size: 12px; color: #6B7280; margin-bottom: 18px; }
-  .box { border: 1px solid #E5E7EB; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
-  .score { font-size: 46px; font-weight: bold; text-align: center; color: ${readiness.color}; margin: 4px 0; }
-  .tier { font-size: 16px; font-weight: bold; text-align: center; color: ${readiness.color}; }
-  .advice { font-size: 12px; color: #4B5563; text-align: center; margin-top: 6px; }
-  .note { font-size: 11px; color: #9CA3AF; text-align: center; margin-top: 6px; }
-  .change { font-size: 13px; text-align: center; margin-top: 8px; font-weight: bold; }
-  .h { font-size: 14px; font-weight: bold; margin-bottom: 8px; }
-  table.chart { width: 100%; border-collapse: collapse; }
-  td.col { text-align: center; vertical-align: bottom; height: 150px; }
-  .bar { width: 22px; margin: 0 auto; border-radius: 4px; }
-  .val { font-size: 10px; color: #6B7280; margin-bottom: 2px; }
-  .lbl { font-size: 11px; color: #4B5563; margin-top: 4px; }
-  .cap { font-size: 10px; color: #9CA3AF; text-align: center; margin-top: 6px; }
-  table.stats { width: 100%; border-collapse: collapse; }
-  table.stats td { font-size: 13px; padding: 4px 0; }
-  table.stats td.r { text-align: right; font-weight: bold; }
-  .foot { font-size: 10px; color: #9CA3AF; text-align: center; margin-top: 18px; }
+${simple ? simpleCss(readiness.color) : fullCss(readiness.color)}
 </style></head><body>
   <h1>หลังเทพ · รายงานประจำสัปดาห์</h1>
   <div class="sub">Smart Lumbar Support${range ? ' · ' + escapeHtml(range) : ''}</div>

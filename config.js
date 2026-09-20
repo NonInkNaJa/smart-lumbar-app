@@ -25,6 +25,9 @@ export const SCORE_ANIMATION_MS = 700; // ตัวเลขคะแนนน�
 // สถานะภาพรวมบน Home: นั่งถึงกี่ส่วนของเวลาเตือนนั่งนานแล้วเปลี่ยนเป็น "ควรระวัง" (0.8 = ถึง 80%)
 export const STATUS_WARN_RATIO = 0.8;
 
+// ส่งออกรายงาน PDF: เวลาสูงสุดที่รอแต่ละขั้น (มิลลิวินาที) เกินแล้วรายงานเป็นข้อผิดพลาดแทนการค้างเงียบ
+export const PDF_TIMEOUTS = { check: 5000, render: 20000, renderSimple: 12000 };
+
 // Confetti ฉลองเมื่อ streak เพิ่มเป็นวันใหม่
 export const STREAK_CONFETTI_COUNT = 150; // จำนวนชิ้นกระดาษ
 export const STREAK_CONFETTI_COLORS = ['#F97316', '#10B981', '#3B82F6', '#A855F7', '#F59E0B', '#EF4444'];

@@ -14,11 +14,12 @@ import { GOOD_DAY_MAX_BAD_RATIO } from '../utils/postureStats';
 import { useBelt } from '../context/BeltContext';
 import { Card, CardHeader, COLORS, Screen, ScreenTitle, useScreenStyles } from '../components/ui';
 import { BounceTouchable } from '../components/motion';
+import { Mascot } from '../components/Mascot';
 import { useTheme } from '../components/theme';
 
 // หน้าเกี่ยวกับแอป (เปิดจากหน้าตั้งค่า; เป็นหน้าซ่อนในแถบแท็บ): ชื่อ เวอร์ชัน ฮาร์ดแวร์ คำอธิบายสั้นๆ และเกณฑ์การทำงาน
 export default function AboutScreen({ navigation }) {
-  const { settings } = useBelt();
+  const { settings, tier } = useBelt();
   const theme = useTheme();
   const screen = useScreenStyles();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -27,10 +28,11 @@ export default function AboutScreen({ navigation }) {
     <Screen>
       <ScrollView contentContainerStyle={screen.scrollContent}>
         <BounceTouchable style={styles.backButton} onPress={() => navigation.navigate('Settings')} accessibilityLabel="กลับไปหน้าตั้งค่า">
-          <ChevronLeft color={COLORS.blue} size={22} />
+          <ChevronLeft color={theme.number} size={22} />
           <Text style={styles.backText}>ตั้งค่า</Text>
         </BounceTouchable>
 
+        <Mascot tier={tier} size={96} character="heart" />
         <ScreenTitle title="เกี่ยวกับแอป" />
 
         {/* ชื่อ + เวอร์ชัน + คำอธิบาย */}
@@ -73,7 +75,7 @@ export default function AboutScreen({ navigation }) {
 const makeStyles = (t) =>
   StyleSheet.create({
     backButton: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', paddingVertical: 4, paddingRight: 12, marginBottom: 8 },
-    backText: { fontSize: 16, fontWeight: '600', color: COLORS.blue },
+    backText: { fontSize: 16, fontWeight: '600', color: t.number }, // สีน้ำเงินตามธีม: อ่านชัดบนพื้นหลังทั้งสองโหมด
     appName: { fontSize: 22, fontWeight: 'bold', color: t.text },
     infoLine: { fontSize: 14, color: t.muted, marginBottom: 8 },
     description: { fontSize: 14, color: t.text2, lineHeight: 21, marginTop: 4 },

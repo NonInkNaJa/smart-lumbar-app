@@ -6,12 +6,19 @@
 // พื้นหลังของทุกหน้า (ภาพแนวนอนโทนเขียวอ่อน ใช้ resizeMode=cover) สลับเป็น app_background_2.png.jpg ได้ถ้าอยากลอง
 export const BACKGROUND_IMAGE = require('../assets/app_background_1.png.jpg');
 
+// พื้นหลังของโหมดมืด (ภาพโทนเทาเข้มอมเขียว 1408x768 ใช้ resizeMode=cover เหมือนกัน) ใช้แทนภาพสว่างเมื่อเปิดโหมดมืด
+export const BACKGROUND_IMAGE_DARK = require('../assets/app_background_dark.png.jpg');
+
+export function getBackgroundImage(isDark) {
+  return isDark ? BACKGROUND_IMAGE_DARK : BACKGROUND_IMAGE;
+}
+
 // ตัวการ์ตูนต้อนรับบนสุดของหน้า Home
 export const MASCOT_IMAGE = require('../assets/app_mascot_1.png.jpg');
 
 // ภาพมาสคอตตามระดับ (tier): ตอนนี้ใช้ภาพเดียวกัน (สีหน้ายิ้ม) ทุกระดับ อารมณ์ต่างกันด้วยการเคลื่อนไหว/สีขอบ/ป้ายอีโมจิ
 // ถ้ามีภาพสีหน้าเป็นห่วง/ปกติ ให้ require ภาพใหม่ใส่ที่ high / moderate ตรงนี้ได้เลย (ไม่ต้องแก้ที่อื่น)
-// หมายเหตุ: app_mascot_2 เป็นคนละตัวละคร (หัวใจ) ไม่ใช่สีหน้าอีกแบบของตัวนี้ จึงไม่ได้ใช้
+// หมายเหตุ: app_mascot_2 เป็นคนละตัวละคร (หัวใจ) ไม่ใช่สีหน้าอีกแบบของตัวนี้ จึงไม่อยู่ในรายการนี้ — ใช้เป็นมาสคอตตัวที่สอง (MASCOT_VARIANTS.heart ด้านล่าง) ที่หน้าประวัติและหน้าเกี่ยวกับแอป
 export const MASCOT_IMAGES_BY_TIER = {
   low: MASCOT_IMAGE,
   moderate: MASCOT_IMAGE,
@@ -23,8 +30,22 @@ export function getMascotImage(tier) {
   return Object.prototype.hasOwnProperty.call(MASCOT_IMAGES_BY_TIER, tier) ? MASCOT_IMAGES_BY_TIER[tier] : MASCOT_IMAGE;
 }
 
+// มาสคอตตัวที่สอง: หัวใจใส่ผ้าคลุม (ใช้ที่หน้าประวัติและหน้าเกี่ยวกับแอป)
+export const MASCOT_HEART_IMAGE = require('../assets/app_mascot_2.png.jpg');
+
+// มาสคอตแต่ละตัว: รูป + จุดครอปวงกลม (พิกัดพิกเซลของภาพต้นฉบับ 1408x768: ศูนย์กลาง cx,cy และรัศมี r ที่คลุมทั้งตัว
+// วัดจากพิกเซลที่ต่างจากพื้นครีมจริง: spine กรอบ 511-921 x 104-652, heart กรอบ 417-990 x 123-652 พร้อมเผื่อขอบเล็กน้อย)
+export const MASCOT_VARIANTS = {
+  spine: { image: MASCOT_IMAGE, label: 'หลังเทพ', crop: { cx: 716, cy: 380, r: 330 } },
+  heart: { image: MASCOT_HEART_IMAGE, label: 'หัวใจ', crop: { cx: 704, cy: 388, r: 345 } },
+};
+
+export function getMascotVariant(name) {
+  return Object.prototype.hasOwnProperty.call(MASCOT_VARIANTS, name) ? MASCOT_VARIANTS[name] : MASCOT_VARIANTS.spine;
+}
+
 // รูปประกอบท่ายืดเหยียด: key = ชื่อท่าใน utils/postureScore.js (ต้องตรงทุกตัวอักษร)
-// ท่าที่ยังไม่มีรูป (ตอนนี้: 'ยืดสะโพก (Hip Flexors)') ไม่ต้องใส่ในรายการนี้ หน้าจอจะแสดงกรอบว่างแทน
+// ท่าที่ยังไม่มีรูปไม่ต้องใส่ในรายการนี้ หน้าจอจะแสดงกรอบว่างแทน (ตอนนี้ทุกท่ามีรูปครบ)
 const STRETCH_IMAGES = {
   'Cat-Cow': require('../assets/stretches/stretch_cat_cow.png.jpg'),
   "World's Greatest Stretch": require('../assets/stretches/stretch_worlds_greatest.png.jpg'),
@@ -32,6 +53,7 @@ const STRETCH_IMAGES = {
   "Child's Pose": require('../assets/stretches/stretch_childs_pose.png.jpg'),
   'Thoracic Extension (โฟมโรลเลอร์)': require('../assets/stretches/stretch_thoracic_extension.png.jpg'),
   '90/90 Hip Stretch': require('../assets/stretches/stretch_90_90_hip.png.jpg'),
+  'ยืดสะโพก (Hip Flexors)': require('../assets/stretches/stretch_hip_flexors.png.jpg'),
   'Prone Press-up (McKenzie)': require('../assets/stretches/stretch_prone_pressup.png.jpg'),
   'Deep Breathing + Decompression Hang': require('../assets/stretches/stretch_deep_breathing.png.jpg'),
   'ยืดกล้ามเนื้อคอและบ่า': require('../assets/stretches/stretch_neck_shoulder.png.jpg'),

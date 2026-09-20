@@ -6,7 +6,7 @@ import { ShieldAlert } from 'lucide-react-native';
 import { CARD_FADE_MS, CARD_STAGGER_MS } from '../config';
 import { useTheme } from './theme';
 import { BounceTouchable } from './motion';
-import { BACKGROUND_IMAGE } from '../utils/images';
+import { getBackgroundImage } from '../utils/images';
 
 // สีสื่อความหมาย (ไม่เปลี่ยนตามโหมดสว่าง/มืด) ส่วนสีพื้นหลัง/ข้อความอยู่ใน components/theme.js
 export const COLORS = {
@@ -59,9 +59,10 @@ export function useScreenStyles() {
 // กรอบหน้าจอมาตรฐานของทุกหน้า: รูปพื้นหลัง (ครอบเต็มจอ อยู่หลังสุด) + ชั้นเคลือบตามธีม แล้วค่อยเป็นเนื้อหา
 export function Screen({ children }) {
   const styles = useUiStyles();
+  const t = useTheme();
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <Image source={BACKGROUND_IMAGE} style={styles.bgImage} resizeMode="cover" accessible={false} />
+      <Image source={getBackgroundImage(t.isDark)} style={styles.bgImage} resizeMode="cover" accessible={false} />
       <View style={styles.bgOverlay} />
       {children}
     </SafeAreaView>
