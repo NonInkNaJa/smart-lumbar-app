@@ -1,14 +1,11 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Activity, FileText, Share2 } from 'lucide-react-native';
+import { Activity, Share2 } from 'lucide-react-native';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
-import * as Print from 'expo-print';
-import { CHART_RANGES, PDF_TIMEOUTS } from '../config';
+import { CHART_RANGES } from '../config';
 import { MIN_TRACKED_SECONDS, summarizeCauses } from '../utils/postureStats';
 import { getReadinessMessage } from '../utils/postureScore';
-import { buildWeeklyReportHtml, REPORT_PAGE } from '../utils/weeklyReport';
-import { describePdfError, exportPdf, PDF_STEPS } from '../utils/pdfExport';
 import { useBelt } from '../context/BeltContext';
 import { Card, CardHeader, COLORS, Screen, ScreenTitle, useScreenStyles } from '../components/ui';
 import { BounceTouchable } from '../components/motion';
@@ -30,11 +27,7 @@ function CauseRow({ label, percent, color, styles }) {
 }
 
 export default function HistoryScreen() {
-  const { score, tier, lowData, readiness, weekChange, streak, stretchInWeek, stretchInChart, weekData, chartRange, setChartRange, chartData } = useBelt();
-  const [exporting, setExporting] = useState(false); // กำลังสร้าง PDF (กันกดซ้ำ)
-  const [pdfStep, setPdfStep] = useState(null); // ขั้นที่กำลังทำ (แสดงใต้ปุ่ม)
-  const [pdfError, setPdfError] = useState(null); // ข้อความข้อผิดพลาดล่าสุด (แสดงค้างใต้ปุ่มจนกว่าจะกดใหม่)
-  const [pdfNote, setPdfNote] = useState(null); // หมายเหตุ เช่น ต้องใช้รายงานแบบเรียบง่ายแทน
+  const { score, tier, lowData, readiness, weekChange, stretchInChart, chartRange, setChartRange, chartData } = useBelt();
   const viewShotRef = useRef(null);
   const theme = useTheme();
   const screen = useScreenStyles();
@@ -61,45 +54,7 @@ export default function HistoryScreen() {
       const uri = await viewShotRef.current.capture();
       await Sharing.shareAsync(uri, { mimeType: 'image/png' });
     } catch (e) {
-      // แสดงสาเหตุจริง (เดิมกลืนเงียบ): ข้อความจากระบบ + log ขึ้นต้น [SHARE] ดูใน logcat ได้
-      console.warn('[SHARE] image share failed', e);
-      Alert.alert('เกิดข้อผิดพลาด', `ไม่สามารถสร้างภาพสรุปได้\n${String((e && (e.code || e.name)) || '')} ${String((e && e.message) || e || '')}`.trim());
-    }
-  };
-
-  // รายงานประจำสัปดาห์เป็น PDF: ใช้ข้อมูล 7 วันล่าสุดเสมอ (ไม่ขึ้นกับช่วงที่เลือกดูกราฟ) แล้วเปิดหน้าต่างแชร์ของระบบ
-  // ทุกขั้นมีเวลาจำกัดและรายงานข้อผิดพลาดจริงเสมอ (Alert + ข้อความค้างใต้ปุ่ม + log ขึ้นต้น [PDF] ใน logcat) ไม่เงียบ
-  const handleExportPdf = async () => {
-    if (exporting) return;
-    setExporting(true);
-    setPdfError(null);
-    setPdfNote(null);
-    setPdfStep('check');
-    try {
-      const data = { score, tier, lowData, weekData, streak, weekChange, stretchCount: stretchInWeek };
-      const result = await exportPdf({
-        variants: [
-          { key: 'render', html: buildWeeklyReportHtml(data) },
-          { key: 'renderSimple', html: buildWeeklyReportHtml({ ...data, simple: true }) }, // ตัวสำรอง: ใช้เมื่อแบบเต็มสร้างไม่สำเร็จ
-        ],
-        page: REPORT_PAGE,
-        print: Print,
-        sharing: Sharing,
-        timeouts: PDF_TIMEOUTS,
-        onStep: setPdfStep,
-        log: (m) => console.log(m),
-        dialogTitle: 'รายงานประจำสัปดาห์ หลังเทพ',
-      });
-      const first = result.attempts[0];
-      if (!first.ok) setPdfNote(`รายงานแบบเต็มสร้างไม่สำเร็จ (${first.code}) จึงใช้แบบเรียบง่ายแทน`);
-    } catch (e) {
-      const detail = describePdfError(e);
-      console.warn('[PDF] failed\n' + detail);
-      setPdfError(detail);
-      Alert.alert('สร้าง PDF ไม่สำเร็จ', detail, [{ text: 'ส่งเป็นรูปภาพแทน', onPress: handleShare }, { text: 'ปิด', style: 'cancel' }]);
-    } finally {
-      setExporting(false);
-      setPdfStep(null);
+      Alert.alert('เกิดข้อผิดพลาด', 'ไม่สามารถสร้างภาพสรุปได้');
     }
   };
 
@@ -187,23 +142,6 @@ export default function HistoryScreen() {
           <Share2 color="#FFFFFF" size={18} />
           <Text style={styles.shareButtonText}>แชร์สรุปนี้</Text>
         </BounceTouchable>
-
-        <BounceTouchable style={[styles.shareButton, styles.pdfButton]} onPress={handleExportPdf} disabled={exporting}>
-          <FileText color="#FFFFFF" size={18} />
-          <Text style={styles.shareButtonText}>{exporting ? 'กำลังสร้าง PDF...' : 'ส่งออกรายงานสัปดาห์ (PDF)'}</Text>
-        </BounceTouchable>
-        {exporting && pdfStep && <Text style={styles.pdfStatus}>ขั้นตอน: {PDF_STEPS[pdfStep]}...</Text>}
-        {pdfNote && !exporting && <Text style={styles.pdfStatus}>{pdfNote}</Text>}
-        {pdfError && !exporting && (
-          <View style={styles.pdfErrorBox}>
-            <Text style={styles.pdfErrorTitle}>สร้าง PDF ไม่สำเร็จ</Text>
-            <Text selectable style={styles.pdfErrorText}>{pdfError}</Text>
-            <BounceTouchable style={styles.pdfFallbackButton} onPress={handleShare}>
-              <Share2 color="#FFFFFF" size={16} />
-              <Text style={styles.pdfFallbackText}>ส่งสรุปเป็นรูปภาพแทน</Text>
-            </BounceTouchable>
-          </View>
-        )}
       </ScrollView>
     </Screen>
   );
@@ -238,12 +176,5 @@ const makeStyles = (t) =>
     stretchSummary: { fontSize: 12, color: t.muted, textAlign: 'center', marginTop: 4 },
     chartCaption: { fontSize: 11, color: t.faint, textAlign: 'center', marginTop: 10 },
     shareButton: { flexDirection: 'row', backgroundColor: '#4B5563', borderRadius: 8, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-    pdfButton: { backgroundColor: COLORS.blue },
-    pdfStatus: { fontSize: 12, color: t.text2, textAlign: 'center', marginTop: -8, marginBottom: 12 },
-    pdfErrorBox: { backgroundColor: t.alertBg, borderRadius: 8, padding: 12, marginTop: -8, marginBottom: 16 },
-    pdfErrorTitle: { fontSize: 14, fontWeight: '700', color: t.alertText, marginBottom: 4 },
-    pdfErrorText: { fontSize: 12, color: t.alertText, marginBottom: 10 },
-    pdfFallbackButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4B5563', borderRadius: 8, paddingVertical: 10 },
-    pdfFallbackText: { color: '#FFFFFF', fontWeight: '600', fontSize: 14, marginLeft: 8 },
     shareButtonText: { color: '#FFFFFF', fontWeight: '600', fontSize: 15, marginLeft: 8 },
   });

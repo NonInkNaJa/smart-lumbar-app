@@ -393,7 +393,6 @@ export function BeltProvider({ children }) {
     overallStatus,
     confirmStretch,
     stretchToday: stretchLog[todayKey] || 0,
-    stretchInWeek: countInKeys(stretchLog, weekData.map((d) => d.dateKey)),
     stretchInChart: countInKeys(stretchLog, chartData.map((d) => d.dateKey)),
     isPaused,
     togglePause,
