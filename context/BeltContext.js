@@ -12,6 +12,7 @@ import { DEFAULT_SETTINGS, loadSettings, saveSettings, sanitizeSettings } from '
 import { applyDayScores, calculateWeeklyScore, computeWeekChange, getReadinessMessage } from '../utils/postureScore';
 import { getLocalDateKey } from '../utils/postureStats';
 import { getOverallStatus } from '../utils/overallStatus';
+import { elapsedSince } from '../utils/sittingClock';
 import { addStretch, countInKeys, loadStretchLog, saveStretchLog } from '../utils/stretchLog';
 import { decideCelebration, loadCelebrationState, saveCelebrationState } from '../utils/streakCelebration';
 import { recordPostureSample, flushPostureLog, loadSeries, loadStreak, wipeAllStoredData } from '../utils/postureLog';
@@ -49,7 +50,7 @@ export function BeltProvider({ children }) {
   const [isPaused, setIsPaused] = useState(false); // ผู้ใช้กด "หยุดชั่วคราว" (ยังเชื่อมต่อ Bluetooth อยู่) รีเซ็ตเป็น false ทุกครั้งที่ไม่ได้เชื่อมต่อ
   const isPausedRef = useRef(false); // ให้ callback ของ Bluetooth (ผูกไว้ตอนเชื่อมต่อ) เห็นค่าล่าสุด
   isPausedRef.current = isPaused;
-  const sittingSecondsRef = useRef(0); // นับเป็นวินาทีเพื่อไม่ให้เศษนาทีหายตอนหยุด/เริ่มต่อ
+  const sittingMsRef = useRef(0); // เวลานั่งสะสม (มิลลิวินาที) นับตามเวลาจริง ไม่ให้เศษนาทีหายตอนหยุด/เริ่มต่อ
   const [errorMsg, setErrorMsg] = useState(null);
   const connectedDeviceRef = useRef(null);
   const tiltSubscriptionRef = useRef(null);
@@ -113,20 +114,30 @@ export function BeltProvider({ children }) {
   // นับอัตโนมัติทันทีที่เชื่อมต่อ; หยุดนับเฉพาะตอนผู้ใช้กด "หยุดชั่วคราว" (isPaused) ค่าที่นับไว้ไม่หาย
   useEffect(() => {
     if (!isConnected || isPaused) return undefined;
-    // sittingTime เก็บเป็นนาที (เพิ่ม 1 ทุกครบ 60 วินาทีที่นับจริง โดยนับสะสมเป็นวินาทีข้ามช่วงที่หยุด)
+    // sittingTime เก็บเป็นนาที นับสะสมตาม "เวลาจริง" ที่ผ่านไป (Date.now) ข้ามช่วงที่หยุดชั่วคราว
+    // ไม่นับจำนวนรอบของตัวจับเวลา: ตอนปิดจอ/อยู่เบื้องหลัง Android อาจหน่วงหรือข้ามรอบ เวลานั่งจึงต้องไม่หาย
+    let last = Date.now();
+    const accumulate = () => {
+      const now = Date.now();
+      sittingMsRef.current += elapsedSince(last, now);
+      last = now;
+    };
     const id = setInterval(() => {
-      sittingSecondsRef.current += 1;
-      const minutes = Math.floor(sittingSecondsRef.current / 60);
+      accumulate();
+      const minutes = Math.floor(sittingMsRef.current / 60000);
       setSittingTime((prev) => (prev === minutes ? prev : minutes));
     }, 1000);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      accumulate(); // เก็บเศษเวลาช่วงสุดท้ายก่อนหยุด/ตัดการเชื่อมต่อ
+    };
   }, [isConnected, isPaused]);
 
   // หลุด/ตัดการเชื่อมต่อด้วยเหตุใดก็ตาม: เริ่มนับเวลานั่งใหม่ เคลียร์เตือน และยกเลิกการหยุดชั่วคราว
   // (รอบเชื่อมต่อหน้ากลับมานับอัตโนมัติและเตือนได้อีก)
   useEffect(() => {
     if (!isConnected) {
-      sittingSecondsRef.current = 0;
+      sittingMsRef.current = 0;
       setSittingTime(0);
       setIsPaused(false);
       setAlertDismissedUntil(null); // เวลานั่งเริ่มใหม่ ไม่ต้องจำการกดยืดเส้นของรอบเก่า
