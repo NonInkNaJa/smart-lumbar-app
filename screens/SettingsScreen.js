@@ -6,12 +6,13 @@ import { APP_NAME_TH, DEVICE_NAME, SITTING_ALERT_MAX_MINUTES, SITTING_ALERT_MIN_
 import { parseSittingMinutes } from '../utils/settings';
 import { useBelt } from '../context/BeltContext';
 import { notifyBadPosture, notifySittingTooLong } from '../utils/notifications';
+import { formatLinkEvent } from '../utils/linkDiag';
 import { Button, Card, CardHeader, COLORS, IconBadge, Screen, ScreenTitle, useScreenStyles } from '../components/ui';
 import { BounceTouchable } from '../components/motion';
 import { useTheme } from '../components/theme';
 
 export default function SettingsScreen({ navigation }) {
-  const { isConnected, isConnecting, errorMsg, toggleConnection, connectLabel, settings, updateSettings, clearAllData, serviceStatus, backgroundServiceAvailable, homeWidgetAvailable, openBatterySettings } = useBelt();
+  const { isConnected, isConnecting, isReconnecting, linkEvents, errorMsg, toggleConnection, connectLabel, settings, updateSettings, clearAllData, serviceStatus, backgroundServiceAvailable, homeWidgetAvailable, openBatterySettings } = useBelt();
   const [batteryNote, setBatteryNote] = useState(null); // ผลของปุ่มเปิดตั้งค่าแบตเตอรี่ (แสดงเมื่อเปิดไม่ได้)
   const [clearing, setClearing] = useState(false); // กำลังล้างข้อมูล (กันกดซ้ำ)
   const theme = useTheme();
@@ -105,16 +106,30 @@ export default function SettingsScreen({ navigation }) {
         <Card index={1}>
           <CardHeader Icon={Bluetooth} color={isConnected ? COLORS.green : COLORS.slate} title="จัดการ Bluetooth" />
           <Text style={styles.infoLine}>อุปกรณ์: {DEVICE_NAME}</Text>
-          <Text style={[styles.statusText, { color: isConnected ? COLORS.green : COLORS.red }]}>
-            {isConnecting ? 'กำลังค้นหาเข็มขัด...' : isConnected ? 'เชื่อมต่อเข็มขัดแล้ว' : 'ยังไม่ได้เชื่อมต่อ'}
+          <Text style={[styles.statusText, { color: isConnected ? COLORS.green : isReconnecting ? COLORS.slate : COLORS.red }]}>
+            {isConnecting ? 'กำลังค้นหาเข็มขัด...' : isReconnecting ? 'หลุดการเชื่อมต่อ กำลังเชื่อมต่อใหม่...' : isConnected ? 'เชื่อมต่อเข็มขัดแล้ว' : 'ยังไม่ได้เชื่อมต่อ'}
           </Text>
           {errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
           <Button
             label={connectLabel}
             onPress={toggleConnection}
             disabled={isConnecting}
-            color={isConnected ? COLORS.red : COLORS.blue}
+            color={isConnected || isReconnecting ? COLORS.red : COLORS.blue}
           />
+          {/* ประวัติการหลุด/ต่อใหม่ล่าสุด: ไว้ดูว่าหลุดเพราะอะไร (สายหลุด หรือแอปถูกปิด) */}
+          {linkEvents.length > 0 && (
+            <View>
+              <Text style={styles.infoLine}>ประวัติการเชื่อมต่อล่าสุด</Text>
+              {linkEvents
+                .slice(-3)
+                .reverse()
+                .map((e, i) => (
+                  <Text key={`${e.at}-${i}`} style={styles.infoLine}>
+                    {formatLinkEvent(e)}
+                  </Text>
+                ))}
+            </View>
+          )}
         </Card>
 
         {/* ตั้งเวลาเตือนนั่งนาน */}

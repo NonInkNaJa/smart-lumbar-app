@@ -22,6 +22,7 @@ export default function HomeScreen() {
     saveRating,
     isConnected,
     isConnecting,
+    isReconnecting,
     errorMsg,
     toggleConnection,
     connectLabel,
@@ -71,15 +72,15 @@ export default function HomeScreen() {
         {/* การเชื่อมต่อ */}
         <Card index={1}>
           <CardHeader Icon={Bluetooth} color={isConnected ? COLORS.green : COLORS.slate} title="สถานะการเชื่อมต่อ" />
-          <Text style={[styles.statusText, { color: isConnected ? COLORS.green : COLORS.red }]}>
-            {isConnecting ? 'กำลังค้นหาเข็มขัด...' : isConnected ? 'เชื่อมต่อเข็มขัดแล้ว' : 'ยังไม่ได้เชื่อมต่อ'}
+          <Text style={[styles.statusText, { color: isConnected ? COLORS.green : isReconnecting ? COLORS.slate : COLORS.red }]}>
+            {isConnecting ? 'กำลังค้นหาเข็มขัด...' : isReconnecting ? 'หลุดการเชื่อมต่อ กำลังเชื่อมต่อใหม่...' : isConnected ? 'เชื่อมต่อเข็มขัดแล้ว' : 'ยังไม่ได้เชื่อมต่อ'}
           </Text>
           {errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
           <Button
             label={connectLabel}
             onPress={toggleConnection}
             disabled={isConnecting}
-            color={isConnected ? COLORS.red : COLORS.blue}
+            color={isConnected || isReconnecting ? COLORS.red : COLORS.blue}
           />
         </Card>
 
@@ -134,7 +135,7 @@ export default function HomeScreen() {
             </View>
           ) : (
             <Text style={styles.tiltPlaceholder}>
-              {isConnected ? 'กำลังรอข้อมูลจากเข็มขัด...' : 'เชื่อมต่อเข็มขัดเพื่อดูมุมเอียง'}
+              {isReconnecting ? 'กำลังเชื่อมต่อเข็มขัดใหม่ (เวลานั่งยังนับต่อ)...' : isConnected ? 'กำลังรอข้อมูลจากเข็มขัด...' : 'เชื่อมต่อเข็มขัดเพื่อดูมุมเอียง'}
             </Text>
           )}
           {isPaused && <Text style={styles.tiltPlaceholder}>หยุดตรวจท่านั่งชั่วคราว (ไม่บันทึก ไม่เตือน)</Text>}

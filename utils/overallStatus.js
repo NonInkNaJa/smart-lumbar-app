@@ -4,7 +4,8 @@ import { STATUS_WARN_RATIO } from '../config';
 //   bad  (แดง)   = ควรปรับท่า        : กำลังเตือนท่านั่งไม่ดี หรือเตือนนั่งนานอยู่
 //   warn (เหลือง) = ควรระวัง          : ใกล้ถึงเวลาเตือนนั่งนาน (ถึง STATUS_WARN_RATIO ของเวลาที่ตั้ง)
 //   good (เขียว)  = ท่านั่งดี          : เชื่อมต่ออยู่และยังไม่มีอะไรต้องระวัง
-//   idle (เทา)   = ยังไม่ได้เชื่อมต่อ / หยุดตรวจชั่วคราว : ยังไม่มีข้อมูลสดให้ตัดสิน (ไม่ใช้ "ท่านั่งดี" ทั้งที่ไม่ได้ตรวจ)
+//   idle (เทา)   = ยังไม่ได้เชื่อมต่อ / หยุดตรวจชั่วคราว / กำลังเชื่อมต่อใหม่ (สายหลุดเอง) : ยังไม่มีข้อมูลสดให้ตัดสิน (ไม่ใช้ "ท่านั่งดี" ทั้งที่ไม่ได้ตรวจ)
+//   ยกเว้นเตือนนั่งนาน (isAlert คิดจากเวลานั่ง) ยังแดงได้ตอนกำลังเชื่อมต่อใหม่ เพราะเวลานั่งยังเดินอยู่
 // nextAlertAt = เวลานั่ง (นาที) ที่จะเตือนนั่งนานครั้งถัดไป (หลังกด "ยืดเส้นแล้ว" จะขยับไปอีกรอบ)
 // limitMinutes = เวลาเตือนนั่งนานที่ผู้ใช้ตั้ง (ความยาวของหนึ่งรอบ)
 export const STATUS_META = {
@@ -13,11 +14,14 @@ export const STATUS_META = {
   good: { key: 'good', level: 'good', label: 'ท่านั่งดี', color: '#10B981' },
   idle: { key: 'idle', level: 'idle', label: 'ยังไม่ได้เชื่อมต่อ', color: '#6B7280' },
   paused: { key: 'paused', level: 'idle', label: 'หยุดตรวจชั่วคราว', color: '#6B7280' },
+  reconnecting: { key: 'reconnecting', level: 'idle', label: 'กำลังเชื่อมต่อใหม่', color: '#6B7280' },
 };
 
-export function getOverallStatus({ isConnected, isPaused, postureAlert, isAlert, sittingTime, nextAlertAt, limitMinutes }) {
+// isConnected = อยู่ในรอบการนั่ง (เชื่อมต่ออยู่ หรือกำลังต่อใหม่); isReconnecting = สายหลุดเองและกำลังต่อใหม่ (ยังไม่มีข้อมูลสด)
+export function getOverallStatus({ isConnected, isPaused, isReconnecting = false, postureAlert, isAlert, sittingTime, nextAlertAt, limitMinutes }) {
   if (postureAlert || isAlert) return STATUS_META.bad;
   if (!isConnected) return STATUS_META.idle;
+  if (isReconnecting) return STATUS_META.reconnecting;
   if (isPaused) return STATUS_META.paused;
   const warnAt = nextAlertAt - limitMinutes * (1 - STATUS_WARN_RATIO);
   if (sittingTime >= warnAt) return STATUS_META.warn;

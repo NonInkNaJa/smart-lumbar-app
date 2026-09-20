@@ -8,8 +8,9 @@ export const WIDGET_SCORE_MS = 36 * 60 * 60 * 1000; // แท่งคะแน�
 
 // สถานะที่ "ต้องสด" (บอกว่าแอปกำลังทำงานกับเข็มขัดอยู่): ถ้าข้อมูลเก่าเกิน WIDGET_LIVE_MS ไม่เชื่อถือ
 // "ยังไม่ได้เชื่อมต่อ" (idle) ไม่หมดอายุ เพราะเป็นความจริงต่อไปจนกว่าแอปจะส่งสถานะใหม่ (แอปส่งทุกครั้งที่เชื่อมต่อ)
-const LIVE_KEYS = ['good', 'warn', 'bad', 'paused'];
+const LIVE_KEYS = ['good', 'warn', 'bad', 'paused', 'reconnecting'];
 
+// isConnected = เชื่อมต่อจริงและมีข้อมูลสดเท่านั้น (ตอนกำลังต่อใหม่ต้องเป็น false จึงไม่โชว์เวลานั่งที่ไม่ขยับ)
 // overallStatus = ผลของ getOverallStatus (ตัวเดียวกับป้ายสถานะบนหน้า Home): { key, label, color }
 // nextAlertAt = เวลานั่ง (นาที) ที่จะเตือนนั่งนานครั้งถัดไป (ขยับเมื่อกด "ยืดเส้นแล้ว")
 export function buildWidgetState({ overallStatus, isConnected, isPaused, sittingTime, nextAlertAt, score, tierColor }) {

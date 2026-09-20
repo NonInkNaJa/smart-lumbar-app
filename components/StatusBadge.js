@@ -1,10 +1,10 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { BluetoothOff, CircleCheck, CirclePause, ShieldAlert, TriangleAlert } from 'lucide-react-native';
+import { BluetoothOff, CircleCheck, CirclePause, RefreshCw, ShieldAlert, TriangleAlert } from 'lucide-react-native';
 import { useBelt } from '../context/BeltContext';
 import { useTheme } from './theme';
 
-const ICONS = { good: CircleCheck, warn: TriangleAlert, bad: ShieldAlert, idle: BluetoothOff, paused: CirclePause };
+const ICONS = { good: CircleCheck, warn: TriangleAlert, bad: ShieldAlert, idle: BluetoothOff, paused: CirclePause, reconnecting: RefreshCw };
 
 // ป้ายสถานะภาพรวมบนสุดของหน้า Home: เขียว "ท่านั่งดี" / เหลือง "ควรระวัง" / แดง "ควรปรับท่า" / เทา (ยังไม่ได้เชื่อมต่อ, หยุดตรวจ)
 // พื้นตามธีม + ขอบ/ไอคอนสีสถานะ อ่านชัดทั้งโหมดสว่าง/มืด

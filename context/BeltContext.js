@@ -9,6 +9,9 @@ import {
   FLUSH_INTERVAL_MS,
   SERVICE_VERIFY_DELAY_MS,
   WIDGET_HEARTBEAT_MS,
+  RECONNECT_WINDOW_MS,
+  RECONNECT_RETRY_MS,
+  RECONNECT_QUICK_RETRIES,
 } from '../config';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, sanitizeSettings } from '../utils/settings';
 import { applyDayScores, calculateWeeklyScore, computeWeekChange, getReadinessMessage } from '../utils/postureScore';
@@ -33,7 +36,8 @@ import { recordPostureSample, flushPostureLog, loadSeries, loadStreak, wipeAllSt
 import { saveSelfReport, getSelfReportLog } from '../utils/storage';
 import { parseTiltPayload } from '../utils/tilt';
 import { getPostureStatus } from '../utils/posture';
-import { setupNotifications, notifyBadPosture, notifySittingTooLong } from '../utils/notifications';
+import { setupNotifications, notifyBadPosture, notifySittingTooLong, notifyBeltLost, notifyBeltGaveUp, dismissNotification } from '../utils/notifications';
+import { checkAbandonedSession, describeDisconnect, recordLinkEvent, setLinkSession } from '../utils/linkDiag';
 
 let bleManager = null;
 try {
@@ -49,7 +53,12 @@ export function useBelt() {
 }
 
 export function BeltProvider({ children }) {
-  const [connectionState, setConnectionState] = useState('disconnected');
+  const [connectionState, setConnectionState] = useState('disconnected'); // disconnected | connecting | connected | reconnecting (สายหลุดเอง กำลังต่อใหม่)
+  const connectionStateRef = useRef('disconnected'); // ค่าล่าสุดทันที (state ที่วาดแล้วอาจเก่า) ให้ callback ที่ผูกไว้ตอนเชื่อมต่ออ่านได้
+  const changeConnection = (next) => {
+    connectionStateRef.current = next;
+    setConnectionState(next);
+  };
   const [sittingTime, setSittingTime] = useState(0); // หน่วย: นาที
   // การตั้งค่าของผู้ใช้ (เวลาเตือนนั่งนาน, dark mode) เก็บใน AsyncStorage; settingsReady = โหลดเสร็จแล้ว
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -72,6 +81,24 @@ export function BeltProvider({ children }) {
   const [errorMsg, setErrorMsg] = useState(null);
   const connectedDeviceRef = useRef(null);
   const tiltSubscriptionRef = useRef(null);
+  // เชื่อมต่อใหม่อัตโนมัติ (สายหลุดเอง)
+  const lastDeviceIdRef = useRef(null); // id เข็มขัดที่เชื่อมต่อล่าสุด (ใช้ต่อใหม่โดยไม่ต้องสแกน)
+  const userDisconnectRef = useRef(false); // true = ผู้ใช้กดตัดการเชื่อมต่อเอง ไม่ต้องต่อใหม่ให้
+  const disconnectSubRef = useRef(null); // subscription ของ onDisconnected (ต้องลบก่อนผูกใหม่ ไม่งั้นฟังซ้ำ)
+  const connectedAtRef = useRef(0); // เวลา (ms) ที่เชื่อมต่อสำเร็จล่าสุด (ไว้บอกว่าหลุดหลังเชื่อมต่อมานานเท่าไหร่)
+  const reconnectSeqRef = useRef(0); // เลขรอบต่อใหม่: รอบเก่าที่ยังค้างอยู่เห็นว่าเลขเปลี่ยนแล้วจะเลิกเอง
+  const reconnectBusyRef = useRef(false);
+  const reconnectFailuresRef = useRef(0);
+  const reconnectStartedAtRef = useRef(0);
+  const reconnectRetryTimerRef = useRef(null);
+  const reconnectWindowTimerRef = useRef(null);
+  const lostNotifIdRef = useRef(null); // id แจ้งเตือน "เข็มขัดหลุด" (ลบทิ้งเมื่อต่อกลับได้)
+  const lastDropTextRef = useRef('');
+  const lastDiagAtRef = useRef(0); // เวลา (ms) ที่จดข้อมูลล่าสุดลงประวัติการเชื่อมต่อ
+  const handleDisconnectRef = useRef(() => {});
+  const giveUpReconnectRef = useRef(() => {});
+  const attemptReconnectRef = useRef(() => {});
+  const [linkEvents, setLinkEvents] = useState([]); // ประวัติการหลุด/ต่อใหม่ล่าสุด (แสดงในหน้าตั้งค่า)
 
   const [tilt, setTilt] = useState(null); // { pitch, roll } หน่วยองศา
   const badPostureSinceRef = useRef(null); // เวลา (ms) ที่เริ่มนั่งท่าไม่ดีต่อเนื่อง
@@ -95,14 +122,17 @@ export function BeltProvider({ children }) {
   const [selfRating, setSelfRating] = useState(null);
   const todayKey = getLocalDateKey();
 
-  const isConnected = connectionState === 'connected';
+  const isConnected = connectionState === 'connected'; // เชื่อมต่ออยู่และมีข้อมูลสดจากเข็มขัด
   const isConnecting = connectionState === 'connecting';
+  const isReconnecting = connectionState === 'reconnecting';
+  // อยู่ในรอบการนั่ง = เชื่อมต่ออยู่ หรือกำลังต่อใหม่หลังสายหลุด: ช่วงต่อใหม่ เวลานั่ง/service/เตือนนั่งนานยังเดินต่อ (ไม่รีเซ็ต)
+  const sessionActive = isConnected || isReconnecting;
 
   // เตือนนั่งนาน = นั่งต่อเนื่องถึงเวลาที่ผู้ใช้ตั้งไว้ (คำนวณจากเวลานั่งเทียบกับค่าที่ตั้งเสมอ
   // จึงปรับค่าตอนกำลังนั่งอยู่แล้วมีผลทันที และหลุดการเชื่อมต่อ = เวลานั่งเป็น 0 = ไม่เตือน)
   // กด "ยืดเส้น/ลุกแล้ว" = ซ่อนเตือนจนกว่าจะนั่งต่ออีกครบเวลาที่ตั้ง (ไม่รีเซ็ตเวลานั่ง; เวลานั่งยังเดินต่อ) แล้วเตือนรอบใหม่
   const [alertDismissedUntil, setAlertDismissedUntil] = useState(null); // เวลานั่ง (นาที) ที่เตือนรอบใหม่จะกลับมา
-  const isAlert = isSittingAlert({ isConnected, sittingTime, limitMinutes: settings.sittingAlertMinutes, dismissedUntil: alertDismissedUntil });
+  const isAlert = isSittingAlert({ isConnected: sessionActive, sittingTime, limitMinutes: settings.sittingAlertMinutes, dismissedUntil: alertDismissedUntil });
 
   // จำนวนครั้งที่ลุกยืดเส้นต่อวัน (เก็บในเครื่อง)
   const [stretchLog, setStretchLog] = useState({});
@@ -114,6 +144,9 @@ export function BeltProvider({ children }) {
 
   // ---------- ตอนเปิดแอป ----------
   useEffect(() => {
+    checkAbandonedSession().then((diag) => {
+      if (diag) setLinkEvents(diag.events);
+    });
     (async () => {
       const loaded = await loadSettings();
       settingsRef.current = loaded;
@@ -148,7 +181,7 @@ export function BeltProvider({ children }) {
 
   // นับอัตโนมัติทันทีที่เชื่อมต่อ; หยุดนับเฉพาะตอนผู้ใช้กด "หยุดชั่วคราว" (isPaused) ค่าที่นับไว้ไม่หาย
   useEffect(() => {
-    if (!isConnected || isPaused) return undefined;
+    if (!sessionActive || isPaused) return undefined;
     // sittingTime เก็บเป็นนาที นับสะสมตาม "เวลาจริง" ที่ผ่านไป (Date.now) ข้ามช่วงที่หยุดชั่วคราว
     // ไม่นับจำนวนรอบของตัวจับเวลา: ตอนปิดจอ/อยู่เบื้องหลัง Android อาจหน่วงหรือข้ามรอบ เวลานั่งจึงต้องไม่หาย
     // และตอนอยู่เบื้องหลัง React Native หยุดตัวจับเวลา JS ทั้งหมด (setInterval ไม่เดินเลย) จึงให้ข้อมูลจากเข็มขัด (ทุก 1 วินาที)
@@ -160,19 +193,21 @@ export function BeltProvider({ children }) {
       if (sittingLastRef.current !== null) sittingMsRef.current += elapsedSince(sittingLastRef.current, Date.now()); // เศษเวลาช่วงสุดท้ายก่อนหยุด/ตัดการเชื่อมต่อ
       sittingLastRef.current = null;
     };
-  }, [isConnected, isPaused]);
+  }, [sessionActive, isPaused]);
 
   // หลุด/ตัดการเชื่อมต่อด้วยเหตุใดก็ตาม: เริ่มนับเวลานั่งใหม่ เคลียร์เตือน และยกเลิกการหยุดชั่วคราว
   // (รอบเชื่อมต่อหน้ากลับมานับอัตโนมัติและเตือนได้อีก)
+  const resetSittingSession = () => {
+    sittingMsRef.current = 0;
+    sittingMinutesRef.current = 0;
+    if (sittingLastRef.current !== null) sittingLastRef.current = Date.now();
+    setSittingTime(0);
+    setIsPaused(false);
+    setAlertDismissedUntil(null); // เวลานั่งเริ่มใหม่ ไม่ต้องจำการกดยืดเส้นของรอบเก่า
+  };
   useEffect(() => {
-    if (!isConnected) {
-      sittingMsRef.current = 0;
-      sittingMinutesRef.current = 0;
-      setSittingTime(0);
-      setIsPaused(false);
-      setAlertDismissedUntil(null); // เวลานั่งเริ่มใหม่ ไม่ต้องจำการกดยืดเส้นของรอบเก่า
-    }
-  }, [isConnected]);
+    if (!sessionActive) resetSittingSession();
+  }, [sessionActive]);
 
   // ---------- ทำงานเบื้องหลัง (foreground service) ----------
   // เปิดตอนเชื่อมต่อเข็มขัดอยู่และผู้ใช้เปิดสวิตช์ไว้; ปิดตอนตัดการเชื่อมต่อหรือปิดสวิตช์
@@ -184,7 +219,7 @@ export function BeltProvider({ children }) {
   const serviceQueueRef = useRef(Promise.resolve()); // สั่งเริ่ม/หยุดทีละคำสั่งตามลำดับ กันสั่งหยุดแซงก่อนเริ่มเสร็จ
   useEffect(() => {
     if (!settingsReady) return; // รอโหลดการตั้งค่าก่อน กันเริ่มด้วยค่าเริ่มต้นทั้งที่ผู้ใช้ปิดไว้
-    const want = isConnected && settings.backgroundService;
+    const want = sessionActive && settings.backgroundService;
     serviceWantRef.current = want;
     serviceQueueRef.current = serviceQueueRef.current.then(async () => {
       if (serviceWantRef.current !== want) return; // มีคำสั่งใหม่กว่าแล้ว ข้ามอันนี้
@@ -217,7 +252,7 @@ export function BeltProvider({ children }) {
         setServiceStatus({ state: 'off', message: null });
       }
     });
-  }, [isConnected, settings.backgroundService, settingsReady]);
+  }, [sessionActive, settings.backgroundService, settingsReady]);
 
   const togglePause = () => setIsPaused((p) => !p);
 
@@ -331,6 +366,16 @@ export function BeltProvider({ children }) {
         refreshHistory();
         checkDailySummary();
         pushWidgetRef.current(true);
+        // กลับมาหน้าจอตอนกำลังต่อใหม่: ตัวจับเวลายอมแพ้อาจไม่ได้ทำงานตอนอยู่เบื้องหลัง ตรวจเองว่าเลยเวลาหรือยัง / ลองต่อใหม่ทันทีถ้ากำลังรอตัวจับเวลาอยู่
+        if (connectionStateRef.current === 'reconnecting') {
+          if (Date.now() - reconnectStartedAtRef.current > RECONNECT_WINDOW_MS) {
+            giveUpReconnectRef.current();
+          } else if (reconnectRetryTimerRef.current) {
+            clearTimeout(reconnectRetryTimerRef.current);
+            reconnectRetryTimerRef.current = null;
+            attemptReconnectRef.current();
+          }
+        }
       }
     });
     return () => sub.remove();
@@ -362,6 +407,192 @@ export function BeltProvider({ children }) {
     return Object.values(granted).every((v) => v === PermissionsAndroid.RESULTS.GRANTED);
   };
 
+  // ---------- เชื่อมต่อ / เชื่อมต่อใหม่อัตโนมัติ ----------
+  // ผูกอุปกรณ์ที่เชื่อมต่อแล้ว (ทั้งตอนกดเชื่อมต่อครั้งแรกและตอนต่อใหม่อัตโนมัติ): จำ id ไว้ต่อใหม่, ฟังการหลุด, รับค่ามุมเอียง
+  // callback ทั้งหลายผูกไว้ตอนนี้แล้วถูกเรียกทีหลังตอนอยู่เบื้องหลัง จึงใช้แต่ ref (ไม่พึ่งค่า state ที่ค้างจากการวาดครั้งนั้น)
+  const attachDevice = (connectedDevice) => {
+    connectedDeviceRef.current = connectedDevice;
+    lastDeviceIdRef.current = connectedDevice.id;
+    userDisconnectRef.current = false;
+    connectedAtRef.current = Date.now();
+
+    // ต้องเก็บ subscription ไว้ลบ: ไม่งั้นหลุดครั้งที่ 2 เรียกตัวฟังของครั้งแรกซ้ำแล้วต่อใหม่ซ้อนกัน
+    if (disconnectSubRef.current) disconnectSubRef.current.remove();
+    disconnectSubRef.current = connectedDevice.onDisconnected((disconnectError) => handleDisconnectRef.current(disconnectError)) || null;
+
+    // รับค่ามุมเอียง (NOTIFY) ที่เฟิร์มแวร์ส่งมาทุก 1 วินาที
+    tiltSubscriptionRef.current = connectedDevice.monitorCharacteristicForService(
+      SERVICE_UUID,
+      CHARACTERISTIC_UUID,
+      (monitorError, characteristic) => {
+        if (monitorError) return; // ตอนหลุดจะมี error ตามมา ซึ่ง onDisconnected จัดการอยู่แล้ว
+        const parsed = parseTiltPayload(characteristic?.value);
+        if (parsed) {
+          setTilt(parsed);
+          const nowMs = Date.now();
+          // นับเวลาท่าดี/ไม่ดีลงบันทึกรายวัน (ข้ามตอนหยุดชั่วคราว: ไม่ได้นั่งอยู่ ไม่ให้ประวัติเพี้ยน)
+          if (!isPausedRef.current) {
+            recordPostureSample(getPostureStatus(parsed));
+            // ข้อมูลเข็มขัดมาทุก 1 วินาทีแม้ตอนอยู่เบื้องหลัง (ตัวจับเวลา JS หยุด) จึงใช้เป็นจังหวะนับเวลานั่งและเขียนข้อมูลลงเครื่องด้วย
+            tickSittingClockRef.current();
+            if (nowMs - lastFlushAtRef.current >= FLUSH_INTERVAL_MS) {
+              lastFlushAtRef.current = nowMs;
+              flushPostureLog();
+            }
+          }
+          // จดเวลาข้อมูลล่าสุดไว้ (ถ้าแอปถูกปิดขณะเชื่อมต่อ ครั้งหน้าจะรู้ว่าปิดตอนไหน แยกจากสายหลุด)
+          if (nowMs - lastDiagAtRef.current >= FLUSH_INTERVAL_MS) {
+            lastDiagAtRef.current = nowMs;
+            setLinkSession({ lastDataAt: nowMs });
+          }
+          // ส่งสถานะให้วิดเจ็ตท้ายสุด (หลังนับเวลาแล้ว): ตอนอยู่เบื้องหลัง React อาจไม่วาดใหม่ จึงประเมินท่านั่งไม่ดีและคำนวณค่าที่ส่งจาก ref ตรงนี้เลย
+          // (evaluatePostureAlert ใช้แต่ ref และค่าคงที่ จึงเรียกจาก callback ที่ผูกไว้ตอนเชื่อมต่อได้อย่างปลอดภัย); ส่งเมื่อค่าเปลี่ยนหรือครบ ~5 นาที
+          evaluatePostureAlert(parsed, isPausedRef.current);
+          pushWidgetRef.current();
+        }
+      }
+    );
+  };
+
+  const pushLinkEvent = (event) => {
+    recordLinkEvent(event).then((diag) => {
+      if (diag) setLinkEvents(diag.events);
+    });
+  };
+
+  const clearReconnectTimers = () => {
+    if (reconnectRetryTimerRef.current) clearTimeout(reconnectRetryTimerRef.current);
+    if (reconnectWindowTimerRef.current) clearTimeout(reconnectWindowTimerRef.current);
+    reconnectRetryTimerRef.current = null;
+    reconnectWindowTimerRef.current = null;
+  };
+
+  // เลิกรอบต่อใหม่ (ไม่เปลี่ยนสถานะการเชื่อมต่อ): รอบที่ค้างอยู่ (เช่น รอเข็มขัดกลับมา) เห็นว่าเลขรอบเปลี่ยนแล้วจะเลิกเอง
+  const endReconnect = () => {
+    reconnectSeqRef.current += 1;
+    reconnectBusyRef.current = false;
+    clearReconnectTimers();
+  };
+
+  const clearLostNotification = () => {
+    dismissNotification(lostNotifIdRef.current);
+    lostNotifIdRef.current = null;
+  };
+
+  // ต่อใหม่ไม่ได้ภายในเวลาที่กำหนด: ถือว่าหลุดจริง (เวลานั่ง/service รีเซ็ตตามปกติผ่านสถานะ "ไม่ได้เชื่อมต่อ") + แจ้งให้ผู้ใช้รู้
+  const giveUpReconnect = async () => {
+    if (connectionStateRef.current !== 'reconnecting') return;
+    const lostFor = Date.now() - reconnectStartedAtRef.current;
+    const id = lastDeviceIdRef.current;
+    endReconnect();
+    changeConnection('disconnected');
+    setLinkSession({ open: false });
+    pushLinkEvent({ at: Date.now(), kind: 'gaveup', afterMs: lostFor, text: lastDropTextRef.current });
+    clearLostNotification();
+    notifyBeltGaveUp();
+    pushWidgetRef.current(true);
+    try {
+      if (id && bleManager) await bleManager.cancelDeviceConnection(id); // ยกเลิกการรอต่อที่ค้างอยู่
+    } catch (e) {
+      // ยกเลิกไม่ได้/ไม่มีการเชื่อมต่อค้าง: ข้ามได้
+    }
+  };
+
+  // ต่อเข็มขัดเดิมใหม่ด้วย id ที่จำไว้ (ไม่ต้องสแกน) โหมด autoConnect: Android รอจนเข็มขัดกลับมาให้เอง ไม่ต้องใช้ตัวจับเวลา JS (ซึ่งหยุดตอนอยู่เบื้องหลัง)
+  const attemptReconnect = async () => {
+    if (connectionStateRef.current !== 'reconnecting' || !bleManager || reconnectBusyRef.current) return;
+    const seq = reconnectSeqRef.current;
+    const id = lastDeviceIdRef.current;
+    reconnectBusyRef.current = true;
+    try {
+      const device = await bleManager.connectToDevice(id, { autoConnect: true });
+      await device.discoverAllServicesAndCharacteristics();
+      if (seq !== reconnectSeqRef.current || connectionStateRef.current !== 'reconnecting') {
+        // ระหว่างรอ ผู้ใช้กดยกเลิก/ยอมแพ้ไปแล้ว: ปิดการเชื่อมต่อที่เพิ่งได้มา ไม่ให้ค้าง
+        try {
+          await device.cancelConnection();
+        } catch (e) {
+          // ข้ามได้
+        }
+        return;
+      }
+      const lostFor = Date.now() - reconnectStartedAtRef.current;
+      const expired = lostFor > RECONNECT_WINDOW_MS; // ต่อได้ช้ากว่ากำหนด (ตัวจับเวลายอมแพ้ไม่ทำงานเพราะอยู่เบื้องหลัง): นับเป็นรอบนั่งใหม่
+      endReconnect();
+      attachDevice(device);
+      if (expired) resetSittingSession();
+      lastDiagAtRef.current = Date.now();
+      setLinkSession({ open: true, lastDataAt: Date.now() });
+      changeConnection('connected');
+      clearLostNotification();
+      pushLinkEvent({ at: Date.now(), kind: 'recovered', afterMs: lostFor, text: lastDropTextRef.current });
+      pushWidgetRef.current(true);
+    } catch (e) {
+      if (seq !== reconnectSeqRef.current || connectionStateRef.current !== 'reconnecting') return;
+      reconnectBusyRef.current = false;
+      reconnectFailuresRef.current += 1;
+      if (Date.now() - reconnectStartedAtRef.current > RECONNECT_WINDOW_MS) {
+        giveUpReconnect();
+      } else if (reconnectFailuresRef.current <= RECONNECT_QUICK_RETRIES) {
+        attemptReconnect(); // ลองซ้ำทันทีสองสามครั้ง (ตอนอยู่เบื้องหลังตัวจับเวลาหยุด จึงต้องมีรอบที่ไม่พึ่งตัวจับเวลา)
+      } else {
+        reconnectRetryTimerRef.current = setTimeout(() => {
+          reconnectRetryTimerRef.current = null;
+          attemptReconnect();
+        }, RECONNECT_RETRY_MS);
+      }
+    }
+  };
+
+  // สายหลุดเอง: เก็บเวลา+สาเหตุ, เข้าสถานะ "กำลังเชื่อมต่อใหม่" (เวลานั่งกับ service ค้างไว้), แจ้งเตือนถ้าอยู่เบื้องหลัง แล้วเริ่มต่อใหม่
+  const beginReconnect = () => {
+    reconnectSeqRef.current += 1;
+    reconnectBusyRef.current = false;
+    reconnectFailuresRef.current = 0;
+    reconnectStartedAtRef.current = Date.now();
+    clearReconnectTimers();
+    changeConnection('reconnecting');
+    reconnectWindowTimerRef.current = setTimeout(() => {
+      reconnectWindowTimerRef.current = null;
+      giveUpReconnectRef.current();
+    }, RECONNECT_WINDOW_MS);
+    pushWidgetRef.current(true); // วิดเจ็ตต้องรู้ทันทีว่าข้อมูลไม่สดแล้ว (ไม่ค้างโชว์ "ท่านั่งดี")
+    if (AppState.currentState !== 'active') {
+      // อยู่เบื้องหลัง: ผู้ใช้มองไม่เห็นหน้าจอ แจ้งเตือนให้รู้ว่าหลุด (ต่อกลับได้เมื่อไหร่จะลบแจ้งเตือนนี้ทิ้ง)
+      notifyBeltLost().then((id) => {
+        if (connectionStateRef.current === 'reconnecting') lostNotifIdRef.current = id;
+        else dismissNotification(id);
+      });
+    }
+    attemptReconnect();
+  };
+
+  // onDisconnected ของอุปกรณ์: ผู้ใช้กดตัดเอง = จบตามปกติ; หลุดเอง = เก็บสาเหตุแล้วต่อใหม่
+  const handleDisconnect = (disconnectError) => {
+    if (connectionStateRef.current === 'reconnecting' || connectionStateRef.current === 'disconnected') return; // จัดการไปแล้ว (ตัวฟังซ้ำ/ตกค้าง)
+    if (disconnectSubRef.current) {
+      disconnectSubRef.current.remove();
+      disconnectSubRef.current = null;
+    }
+    const intentional = userDisconnectRef.current;
+    const connectedFor = Date.now() - connectedAtRef.current;
+    connectedDeviceRef.current = null;
+    stopTiltMonitoring();
+    if (intentional || !lastDeviceIdRef.current || !bleManager) {
+      changeConnection('disconnected');
+      setLinkSession({ open: false });
+      return;
+    }
+    const info = describeDisconnect(disconnectError);
+    lastDropTextRef.current = info.text;
+    console.log('[BLE] belt disconnected', info.code, info.text);
+    pushLinkEvent({ at: Date.now(), kind: 'drop', afterMs: connectedFor, text: info.text });
+    beginReconnect();
+  };
+  handleDisconnectRef.current = handleDisconnect;
+  giveUpReconnectRef.current = giveUpReconnect;
+  attemptReconnectRef.current = attemptReconnect;
+
   const connect = async () => {
     setErrorMsg(null);
     if (!bleManager) {
@@ -374,18 +605,19 @@ export function BeltProvider({ children }) {
       return;
     }
 
-    setConnectionState('connecting');
+    userDisconnectRef.current = false;
+    changeConnection('connecting');
 
     const timeout = setTimeout(() => {
       bleManager.stopDeviceScan();
-      setConnectionState('disconnected');
+      changeConnection('disconnected');
       setErrorMsg('ไม่พบเข็มขัด กรุณาตรวจสอบว่าเปิดเครื่องแล้ว');
     }, 10000);
 
     bleManager.startDeviceScan(null, null, async (error, device) => {
       if (error) {
         clearTimeout(timeout);
-        setConnectionState('disconnected');
+        changeConnection('disconnected');
         setErrorMsg('เกิดข้อผิดพลาดขณะค้นหาอุปกรณ์');
         return;
       }
@@ -396,70 +628,55 @@ export function BeltProvider({ children }) {
         try {
           const connectedDevice = await device.connect();
           await connectedDevice.discoverAllServicesAndCharacteristics();
-          connectedDeviceRef.current = connectedDevice;
-
-          connectedDevice.onDisconnected(() => {
-            stopTiltMonitoring();
-            setConnectionState('disconnected');
-            connectedDeviceRef.current = null;
-          });
-
-          // รับค่ามุมเอียง (NOTIFY) ที่เฟิร์มแวร์ส่งมาทุก 1 วินาที
-          tiltSubscriptionRef.current = connectedDevice.monitorCharacteristicForService(
-            SERVICE_UUID,
-            CHARACTERISTIC_UUID,
-            (monitorError, characteristic) => {
-              if (monitorError) return; // ตอนตัดการเชื่อมต่อจะมี error ตามมา ซึ่ง onDisconnected จัดการอยู่แล้ว
-              const parsed = parseTiltPayload(characteristic?.value);
-              if (parsed) {
-                setTilt(parsed);
-                // นับเวลาท่าดี/ไม่ดีลงบันทึกรายวัน (ข้ามตอนหยุดชั่วคราว: ไม่ได้นั่งอยู่ ไม่ให้ประวัติเพี้ยน)
-                if (!isPausedRef.current) {
-                  recordPostureSample(getPostureStatus(parsed));
-                  // ข้อมูลเข็มขัดมาทุก 1 วินาทีแม้ตอนอยู่เบื้องหลัง (ตัวจับเวลา JS หยุด) จึงใช้เป็นจังหวะนับเวลานั่งและเขียนข้อมูลลงเครื่องด้วย
-                  tickSittingClockRef.current();
-                  const nowMs = Date.now();
-                  if (nowMs - lastFlushAtRef.current >= FLUSH_INTERVAL_MS) {
-                    lastFlushAtRef.current = nowMs;
-                    flushPostureLog();
-                  }
-                }
-                // ส่งสถานะให้วิดเจ็ตท้ายสุด (หลังนับเวลาแล้ว): ตอนอยู่เบื้องหลัง React อาจไม่วาดใหม่ จึงประเมินท่านั่งไม่ดีและคำนวณค่าที่ส่งจาก ref ตรงนี้เลย
-                // (evaluatePostureAlert ใช้แต่ ref และค่าคงที่ จึงเรียกจาก callback ที่ผูกไว้ตอนเชื่อมต่อได้อย่างปลอดภัย); ส่งเมื่อค่าเปลี่ยนหรือครบ ~5 นาที
-                evaluatePostureAlert(parsed, isPausedRef.current);
-                pushWidgetRef.current();
-              }
-            }
-          );
-
-          setConnectionState('connected');
+          attachDevice(connectedDevice);
+          lastDiagAtRef.current = Date.now();
+          setLinkSession({ open: true, startedAt: Date.now(), lastDataAt: Date.now() });
+          changeConnection('connected');
         } catch (e) {
-          setConnectionState('disconnected');
+          changeConnection('disconnected');
           setErrorMsg('เชื่อมต่อไม่สำเร็จ ลองใหม่อีกครั้ง');
         }
       }
     });
   };
 
+  // ผู้ใช้กดตัดการเชื่อมต่อเอง (หรือกดยกเลิกระหว่างกำลังต่อใหม่): ไม่ต่อใหม่ให้
   const disconnect = async () => {
-    stopTiltMonitoring();
-    if (connectedDeviceRef.current) {
-      await connectedDeviceRef.current.cancelConnection();
+    userDisconnectRef.current = true;
+    const wasReconnecting = connectionStateRef.current === 'reconnecting';
+    endReconnect();
+    if (disconnectSubRef.current) {
+      disconnectSubRef.current.remove();
+      disconnectSubRef.current = null;
     }
-    setConnectionState('disconnected');
+    clearLostNotification();
+    stopTiltMonitoring();
+    setLinkSession({ open: false });
+    try {
+      if (connectedDeviceRef.current) {
+        await connectedDeviceRef.current.cancelConnection();
+      } else if (wasReconnecting && lastDeviceIdRef.current && bleManager) {
+        await bleManager.cancelDeviceConnection(lastDeviceIdRef.current); // ยกเลิกการรอต่อใหม่ที่ค้างอยู่
+      }
+    } catch (e) {
+      console.log('ตัดการเชื่อมต่อไม่สำเร็จ (ถือว่าตัดแล้ว)', e);
+    }
+    connectedDeviceRef.current = null;
+    changeConnection('disconnected');
     setSittingTime(0);
   };
 
-  const toggleConnection = () => (isConnected ? disconnect() : connect());
+  const toggleConnection = () => (isConnected || isReconnecting ? disconnect() : connect());
 
-  const connectLabel = isConnecting ? 'กำลังเชื่อมต่อ...' : isConnected ? 'ตัดการเชื่อมต่อ' : 'เชื่อมต่อ Bluetooth';
+  const connectLabel = isConnecting ? 'กำลังเชื่อมต่อ...' : isReconnecting ? 'ยกเลิกการเชื่อมต่อใหม่' : isConnected ? 'ตัดการเชื่อมต่อ' : 'เชื่อมต่อ Bluetooth';
 
   // สถานะภาพรวมบน Home (เขียว/เหลือง/แดง/เทา) คำนวณจากสถานะที่มีอยู่แล้วทั้งหมด; ใช้กับวิดเจ็ตด้วย จึงคำนวณก่อนส่วนวิดเจ็ต
   // nextAlertAt = เวลานั่ง (นาที) ที่จะเตือนนั่งนานครั้งถัดไป (ขยับเมื่อกด "ยืดเส้นแล้ว")
   const nextAlertAt = alertDismissedUntil === null ? settings.sittingAlertMinutes : alertDismissedUntil;
   const overallStatus = getOverallStatus({
-    isConnected,
+    isConnected: sessionActive,
     isPaused,
+    isReconnecting,
     postureAlert,
     isAlert,
     sittingTime,
@@ -474,8 +691,6 @@ export function BeltProvider({ children }) {
   // สำคัญ: ตอนอยู่เบื้องหลัง React อาจไม่ได้วาดใหม่/รัน effect เลย (ค่า state ที่วาดไว้จะเก่าค้าง) จึงห้ามพึ่งค่าจากการวาด
   // ค่าที่ส่งให้วิดเจ็ตคำนวณจาก ref ทั้งหมดในจังหวะที่เรียก (ref เขียนตรงจากข้อมูลเข็มขัด/ตัวนับเวลา จึงสดเสมอ) ส่วนค่า state ที่วาดแล้วใช้เป็นแค่ตัวสั่งให้ส่ง
   // ส่งเมื่อค่าเปลี่ยน (เวลานั่งเปลี่ยนทุกนาทีจึงส่งทุกนาทีตอนเชื่อมต่ออยู่) และซ้ำทุก WIDGET_HEARTBEAT_MS ถ้าค่าไม่เปลี่ยน (เช่น ตอนหยุดชั่วคราว)
-  const connectedRef = useRef(false);
-  connectedRef.current = isConnected;
   const alertDismissedRef = useRef(null);
   alertDismissedRef.current = alertDismissedUntil;
   const scoreRef = useRef({ score: null, tierColor: readiness.color });
@@ -487,7 +702,9 @@ export function BeltProvider({ children }) {
 
   // สถานะสำหรับวิดเจ็ตจาก ref ล้วน: ใช้ getOverallStatus / isSittingAlert ตัวเดียวกับหน้า Home
   const computeWidgetState = () => {
-    const connected = connectedRef.current;
+    const connState = connectionStateRef.current;
+    const reconnecting = connState === 'reconnecting';
+    const connected = connState === 'connected' || reconnecting; // อยู่ในรอบการนั่ง (รวมกำลังต่อใหม่)
     const paused = isPausedRef.current;
     const minutes = sittingMinutesRef.current;
     const limitMinutes = settingsRef.current.sittingAlertMinutes;
@@ -496,6 +713,7 @@ export function BeltProvider({ children }) {
     const status = getOverallStatus({
       isConnected: connected,
       isPaused: paused,
+      isReconnecting: reconnecting,
       postureAlert: postureAlertRef.current,
       isAlert: isSittingAlert({ isConnected: connected, sittingTime: minutes, limitMinutes, dismissedUntil }),
       sittingTime: minutes,
@@ -504,7 +722,7 @@ export function BeltProvider({ children }) {
     });
     return buildWidgetState({
       overallStatus: status,
-      isConnected: connected,
+      isConnected: connected && !reconnecting, // ต่อใหม่อยู่ = ไม่มีข้อมูลสด ไม่โชว์เวลานั่งที่ไม่ขยับ
       isPaused: paused,
       sittingTime: minutes,
       nextAlertAt: nextAlert,
@@ -524,7 +742,7 @@ export function BeltProvider({ children }) {
   };
   pushWidgetRef.current = pushWidget;
   // สั่งให้ส่งเมื่อสิ่งที่วาดเปลี่ยน (ผู้ใช้กดปุ่ม/ตั้งค่า/เชื่อมต่อ/ประวัติโหลดเสร็จ) — ค่าจริงที่ส่งคำนวณใน pushWidget ไม่ใช่ค่าจากการวาดนี้
-  const widgetTriggerKey = `${historyReady}|${isConnected}|${isPaused}|${overallStatus.key}|${sittingTime}|${nextAlertAt}|${score}|${readiness.color}`;
+  const widgetTriggerKey = `${historyReady}|${connectionState}|${isPaused}|${overallStatus.key}|${sittingTime}|${nextAlertAt}|${score}|${readiness.color}`;
   useEffect(() => {
     pushWidget();
   }, [widgetTriggerKey]);
@@ -608,6 +826,7 @@ export function BeltProvider({ children }) {
     painLogRef.current = {};
     painLoadRef.current = null;
     setPainLog({});
+    setLinkEvents([]);
     celebrationLoadRef.current = null;
     chartRangeRef.current = '7d';
     setChartRange('7d');
@@ -626,6 +845,8 @@ export function BeltProvider({ children }) {
     connectionState,
     isConnected,
     isConnecting,
+    isReconnecting,
+    linkEvents,
     errorMsg,
     toggleConnection,
     connectLabel,
