@@ -23,6 +23,7 @@ export const FLUSH_INTERVAL_MS = 15 * 1000; // เขียนข้อมูล
 export const SCORE_ANIMATION_MS = 700; // ตัวเลขคะแนนนับขึ้น/ลงใช้เวลากี่มิลลิวินาที (0 = เปลี่ยนทันที)
 
 // การแจ้งเตือนถาวรของ foreground service (ตอนแอปรับข้อมูลจากเข็มขัดอยู่เบื้องหลัง)
+export const SERVICE_VERIFY_DELAY_MS = 1500; // สั่งเริ่ม service แล้วรอกี่ ms ก่อนตรวจว่าขึ้นจริง (startForeground ทำงานแบบอะซิงก์)
 export const BACKGROUND_SERVICE_TITLE = 'หลังเทพ กำลังทำงานอยู่';
 export const BACKGROUND_SERVICE_TEXT = 'กำลังรับข้อมูลจากเข็มขัดและเตือนท่านั่ง';
 

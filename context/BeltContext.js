@@ -7,12 +7,20 @@ import {
   CHARACTERISTIC_UUID,
   BAD_POSTURE_SECONDS,
   FLUSH_INTERVAL_MS,
+  SERVICE_VERIFY_DELAY_MS,
 } from '../config';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, sanitizeSettings } from '../utils/settings';
 import { applyDayScores, calculateWeeklyScore, computeWeekChange, getReadinessMessage } from '../utils/postureScore';
 import { getLocalDateKey } from '../utils/postureStats';
 import { getOverallStatus } from '../utils/overallStatus';
 import { elapsedSince } from '../utils/sittingClock';
+import {
+  isBackgroundServiceAvailable,
+  isBackgroundServiceRunning,
+  openBatterySettings as openBatterySettingsNative,
+  startBackgroundService,
+  stopBackgroundService,
+} from '../utils/backgroundService';
 import { addStretch, countInKeys, loadStretchLog, saveStretchLog } from '../utils/stretchLog';
 import { decideCelebration, loadCelebrationState, saveCelebrationState } from '../utils/streakCelebration';
 import { recordPostureSample, flushPostureLog, loadSeries, loadStreak, wipeAllStoredData } from '../utils/postureLog';
@@ -151,6 +159,51 @@ export function BeltProvider({ children }) {
       setAlertDismissedUntil(null); // เวลานั่งเริ่มใหม่ ไม่ต้องจำการกดยืดเส้นของรอบเก่า
     }
   }, [isConnected]);
+
+  // ---------- ทำงานเบื้องหลัง (foreground service) ----------
+  // เปิดตอนเชื่อมต่อเข็มขัดอยู่และผู้ใช้เปิดสวิตช์ไว้; ปิดตอนตัดการเชื่อมต่อหรือปิดสวิตช์
+  // ตัว service แค่ให้ Android ไม่ปิด/แช่แข็งแอปตอนปิดจอ (การเชื่อมต่อ BLE/ตัวจับเวลา/การเตือนยังอยู่ใน JS เหมือนเดิม)
+  // ถ้าเปิดไม่สำเร็จ แอปทำงานเหมือนเดิมทุกอย่าง แค่ไม่ได้รับการคุ้มครองตอนอยู่เบื้องหลัง (แสดงสถานะไว้ในหน้าตั้งค่า)
+  const [serviceStatus, setServiceStatus] = useState({ state: 'off', message: null }); // off | starting | running | failed | unavailable
+  const serviceWantRef = useRef(false); // ค่าที่ต้องการล่าสุด (ผู้เรียกที่ซ้อนกันจะดูค่านี้ ไม่ใช้ค่าที่ผูกไว้ตอนสั่ง)
+  const serviceStartedRef = useRef(false);
+  const serviceQueueRef = useRef(Promise.resolve()); // สั่งเริ่ม/หยุดทีละคำสั่งตามลำดับ กันสั่งหยุดแซงก่อนเริ่มเสร็จ
+  useEffect(() => {
+    if (!settingsReady) return; // รอโหลดการตั้งค่าก่อน กันเริ่มด้วยค่าเริ่มต้นทั้งที่ผู้ใช้ปิดไว้
+    const want = isConnected && settings.backgroundService;
+    serviceWantRef.current = want;
+    serviceQueueRef.current = serviceQueueRef.current.then(async () => {
+      if (serviceWantRef.current !== want) return; // มีคำสั่งใหม่กว่าแล้ว ข้ามอันนี้
+      if (want) {
+        if (!isBackgroundServiceAvailable()) {
+          setServiceStatus({ state: 'unavailable', message: null });
+          return;
+        }
+        setServiceStatus({ state: 'starting', message: null });
+        const res = await startBackgroundService();
+        if (!res.ok) {
+          setServiceStatus({ state: 'failed', message: res.code ? `${res.code}: ${res.message}` : 'เปิดไม่สำเร็จ' });
+          return;
+        }
+        serviceStartedRef.current = true;
+        // ตรวจว่า service ขึ้นจริง (startForeground สำเร็จ) ไม่ใช่แค่สั่งเริ่ม; ไม่รอในคิว (ตัวจับเวลาหยุดตอนอยู่เบื้องหลัง ไม่ให้คิวค้าง)
+        setTimeout(() => {
+          if (!serviceWantRef.current) return;
+          setServiceStatus(
+            isBackgroundServiceRunning()
+              ? { state: 'running', message: null }
+              : { state: 'failed', message: 'สั่งเริ่มแล้วแต่ระบบไม่เปิด service (อาจถูกจำกัดโดยตัวเครื่อง/ยี่ห้อ)' }
+          );
+        }, SERVICE_VERIFY_DELAY_MS);
+      } else {
+        if (serviceStartedRef.current) {
+          serviceStartedRef.current = false;
+          await stopBackgroundService();
+        }
+        setServiceStatus({ state: 'off', message: null });
+      }
+    });
+  }, [isConnected, settings.backgroundService, settingsReady]);
 
   const togglePause = () => setIsPaused((p) => !p);
 
@@ -434,6 +487,9 @@ export function BeltProvider({ children }) {
     settings,
     settingsReady,
     updateSettings,
+    serviceStatus,
+    backgroundServiceAvailable: isBackgroundServiceAvailable(),
+    openBatterySettings: openBatterySettingsNative,
     clearAllData,
     // ประวัติ + คะแนน
     streak,

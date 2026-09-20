@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { Bell, Bluetooth, ChevronRight, Info, Moon, Sun, Timer, Trash2 } from 'lucide-react-native';
+import { Bell, Bluetooth, ChevronRight, Info, Moon, Radio, Sun, Timer, Trash2 } from 'lucide-react-native';
 import appConfig from '../app.json';
 import { APP_NAME_TH, DEVICE_NAME, SITTING_ALERT_MAX_MINUTES, SITTING_ALERT_MIN_MINUTES } from '../config';
 import { parseSittingMinutes } from '../utils/settings';
@@ -11,7 +11,8 @@ import { BounceTouchable } from '../components/motion';
 import { useTheme } from '../components/theme';
 
 export default function SettingsScreen({ navigation }) {
-  const { isConnected, isConnecting, errorMsg, toggleConnection, connectLabel, settings, updateSettings, clearAllData } = useBelt();
+  const { isConnected, isConnecting, errorMsg, toggleConnection, connectLabel, settings, updateSettings, clearAllData, serviceStatus, backgroundServiceAvailable, openBatterySettings } = useBelt();
+  const [batteryNote, setBatteryNote] = useState(null); // ผลของปุ่มเปิดตั้งค่าแบตเตอรี่ (แสดงเมื่อเปิดไม่ได้)
   const [clearing, setClearing] = useState(false); // กำลังล้างข้อมูล (กันกดซ้ำ)
   const theme = useTheme();
   const screen = useScreenStyles();
@@ -37,6 +38,20 @@ export default function SettingsScreen({ navigation }) {
       return;
     }
     if (parsed !== saved) updateSettings({ sittingAlertMinutes: parsed });
+  };
+
+  // ข้อความสถานะของการทำงานเบื้องหลัง
+  const serviceLine = (() => {
+    if (!backgroundServiceAvailable) return { text: 'ใช้ได้เฉพาะแอปที่ติดตั้งบน Android (APK) — เครื่อง/แอปนี้ยังไม่รองรับ', tone: 'muted' };
+    if (!settings.backgroundService) return { text: 'ปิดอยู่: ปิดจอหรือสลับออกจากแอปแล้ว แอปอาจหยุดรับข้อมูลและหยุดเตือน', tone: 'muted' };
+    if (serviceStatus.state === 'starting') return { text: 'กำลังเริ่ม...', tone: 'muted' };
+    if (serviceStatus.state === 'running') return { text: 'ทำงานอยู่ ✓ (เห็นการแจ้งเตือนถาวรที่แถบด้านบน)', tone: 'ok' };
+    if (serviceStatus.state === 'failed') return { text: `เริ่มไม่สำเร็จ: ${serviceStatus.message}`, tone: 'error' };
+    return { text: isConnected ? 'กำลังเตรียม...' : 'จะเริ่มทำงานเมื่อเชื่อมต่อเข็มขัด', tone: 'muted' };
+  })();
+  const onOpenBattery = async () => {
+    const r = await openBatterySettings();
+    setBatteryNote(r.ok ? null : `เปิดหน้าตั้งค่าแบตเตอรี่ไม่ได้${r.code ? ` (${r.code})` : ''} — เข้าเองที่ ตั้งค่า > แอป > หลังเทพ > แบตเตอรี่`);
   };
 
   // ล้างข้อมูลทั้งหมด: ต้องยืนยันในป๊อปอัพก่อนเสมอ (ลบแล้วกู้คืนไม่ได้) ไม่แตะการเชื่อมต่อ Bluetooth
@@ -136,8 +151,30 @@ export default function SettingsScreen({ navigation }) {
           {revertNote && <Text style={styles.errorText}>{revertNote}</Text>}
         </Card>
 
-        {/* ทดสอบแจ้งเตือน */}
+        {/* ทำงานเบื้องหลัง: foreground service ตอนเชื่อมต่อเข็มขัด */}
         <Card index={3}>
+          <CardHeader Icon={Radio} color={COLORS.green} title="ทำงานเบื้องหลัง" />
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>
+              {settings.backgroundService ? 'เปิดอยู่: ปิดจอหรือสลับแอปแล้วยังรับข้อมูลจากเข็มขัดและเตือนต่อ' : 'ปิดอยู่'}
+            </Text>
+            <Switch
+              value={settings.backgroundService}
+              onValueChange={(v) => updateSettings({ backgroundService: v })}
+              trackColor={{ false: theme.surface2, true: COLORS.green }}
+              thumbColor="#FFFFFF"
+              accessibilityLabel="ทำงานเบื้องหลัง"
+            />
+          </View>
+          <Text style={[styles.infoLine, serviceLine.tone === 'ok' && styles.savedLine, serviceLine.tone === 'error' && styles.errorText]}>{serviceLine.text}</Text>
+          <Text style={styles.infoLine}>เมื่อเปิด จะมีการแจ้งเตือนถาวร "หลังเทพ กำลังทำงานอยู่" ที่แถบด้านบนตลอดเวลาที่เชื่อมต่อเข็มขัด (เป็นข้อกำหนดของ Android)</Text>
+          <Button label="ตั้งค่าแบตเตอรี่ของเครื่อง" onPress={onOpenBattery} color={COLORS.slate} />
+          <Text style={[styles.infoLine, styles.batteryHint]}>บางยี่ห้อ (Xiaomi, Oppo, Vivo, Huawei, Samsung) ปิดแอปเบื้องหลังค่อนข้างแรง แนะนำให้เลือก "ไม่จำกัด" ให้แอปนี้</Text>
+          {batteryNote && <Text style={styles.errorText}>{batteryNote}</Text>}
+        </Card>
+
+        {/* ทดสอบแจ้งเตือน */}
+        <Card index={4}>
           <CardHeader Icon={Bell} color={COLORS.amber} title="ทดสอบการแจ้งเตือน" />
           <Text style={styles.infoLine}>กดเพื่อดูว่าเครื่องนี้แสดงป๊อปอัพและสั่นหรือไม่ (ไม่ต้องเชื่อมต่อเข็มขัด)</Text>
           <Button label="ทดสอบเตือนท่านั่งไม่ดี" onPress={() => notifyBadPosture('หลังค่อม')} color={COLORS.amber} />
@@ -145,7 +182,7 @@ export default function SettingsScreen({ navigation }) {
         </Card>
 
         {/* ล้างข้อมูลทั้งหมด */}
-        <Card index={4}>
+        <Card index={5}>
           <CardHeader Icon={Trash2} color={COLORS.red} title="จัดการข้อมูล" />
           <Text style={styles.infoLine}>
             ลบประวัติท่านั่ง คะแนน streak การประเมินความตึง และจำนวนครั้งที่ลุกยืดเส้น พร้อมคืนการตั้งค่าเป็นค่าเริ่มต้น (ไม่ตัดการเชื่อมต่อ Bluetooth)
@@ -154,7 +191,7 @@ export default function SettingsScreen({ navigation }) {
         </Card>
 
         {/* เกี่ยวกับแอป: ชื่อ/เวอร์ชัน/ฮาร์ดแวร์/เกณฑ์ อยู่ในหน้าแยก */}
-        <Card index={5}>
+        <Card index={6}>
           <BounceTouchable style={styles.linkRow} onPress={() => navigation.navigate('About')} accessibilityLabel="เปิดหน้าเกี่ยวกับแอป">
             <IconBadge Icon={Info} color={COLORS.purple} />
             <View style={styles.linkText}>
@@ -188,5 +225,6 @@ const makeStyles = (t) =>
     minutesInputInvalid: { borderColor: COLORS.red },
     unitText: { fontSize: 16, color: t.text2, marginLeft: 10 },
     saveButton: { flex: 1, marginLeft: 12, paddingVertical: 10 },
+    batteryHint: { marginTop: 8, marginBottom: 0, fontSize: 12 },
     savedLine: { fontSize: 13, color: COLORS.green, marginBottom: 8 },
   });

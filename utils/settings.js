@@ -7,6 +7,7 @@ const SETTINGS_KEY = 'app-settings';
 export const DEFAULT_SETTINGS = {
   sittingAlertMinutes: DEFAULT_SITTING_ALERT_MINUTES, // เตือนนั่งนานที่กี่นาที
   darkMode: false, // โหมดมืด
+  backgroundService: true, // ทำงานเบื้องหลัง (foreground service) ตอนเชื่อมต่อเข็มขัด: ปิดจอ/สลับแอปแล้วยังรับข้อมูลและเตือนต่อ
 };
 
 // เวลาเตือนนั่งนานที่ใช้ได้: จำนวนเต็มระหว่าง MIN-MAX นาที
@@ -31,6 +32,7 @@ export function sanitizeSettings(raw) {
       ? s.sittingAlertMinutes
       : DEFAULT_SETTINGS.sittingAlertMinutes,
     darkMode: typeof s.darkMode === 'boolean' ? s.darkMode : DEFAULT_SETTINGS.darkMode,
+    backgroundService: typeof s.backgroundService === 'boolean' ? s.backgroundService : DEFAULT_SETTINGS.backgroundService,
   };
 }
 
