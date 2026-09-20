@@ -4,10 +4,11 @@
   android:layout_width="match_parent"
   android:layout_height="match_parent"
   android:background="@drawable/belt_widget_bg"
-  android:gravity="center"
+  android:gravity="center_vertical"
   android:orientation="vertical"
   android:padding="12dp">
 
+  <!-- ชื่อแอป: ซ่อนเมื่อวิดเจ็ตเตี้ยมาก -->
   <TextView
     android:id="@+id/belt_widget_title"
     android:layout_width="wrap_content"
@@ -17,38 +18,41 @@
     android:textSize="12sp"
     android:textStyle="bold" />
 
-  <TextView
-    android:id="@+id/belt_widget_score"
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:text="--"
-    android:textColor="#111827"
-    android:textSize="30sp"
-    android:textStyle="bold" />
-
-  <TextView
-    android:id="@+id/belt_widget_tier"
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:text="@string/belt_widget_open_app"
-    android:textColor="#6B7280"
-    android:textSize="13sp"
-    android:textStyle="bold" />
-
+  <!-- ส่วนหลัก 1: สถานะท่านั่งปัจจุบัน (ตัวใหญ่ สีตามสถานะ) -->
   <TextView
     android:id="@+id/belt_widget_status"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:layout_marginTop="6dp"
-    android:text="@string/belt_widget_disconnected"
+    android:text="@string/belt_widget_no_data"
     android:textColor="#6B7280"
-    android:textSize="12sp" />
+    android:textSize="18sp"
+    android:textStyle="bold" />
+
+  <!-- ส่วนหลัก 2: เวลานั่งต่อเนื่อง (ซ่อนเมื่อไม่ได้เชื่อมต่อ/หยุดชั่วคราว) -->
+  <TextView
+    android:id="@+id/belt_widget_sitting"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="2dp"
+    android:textColor="#111827"
+    android:textSize="14sp"
+    android:visibility="gone" />
+
+  <!-- ส่วนเสริม: คะแนนความพร้อมเป็นแท่งสีบางๆ (ซ่อนเป็นอย่างแรกเมื่อวิดเจ็ตเล็ก) -->
+  <ImageView
+    android:id="@+id/belt_widget_bar"
+    android:layout_width="match_parent"
+    android:layout_height="5dp"
+    android:layout_marginTop="10dp"
+    android:scaleType="fitXY"
+    android:visibility="gone" />
 
   <TextView
     android:id="@+id/belt_widget_updated"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:layout_marginTop="2dp"
+    android:layout_marginTop="4dp"
     android:textColor="#9CA3AF"
-    android:textSize="10sp" />
+    android:textSize="10sp"
+    android:visibility="gone" />
 </LinearLayout>

@@ -23,3 +23,9 @@ export function getOverallStatus({ isConnected, isPaused, postureAlert, isAlert,
   if (sittingTime >= warnAt) return STATUS_META.warn;
   return STATUS_META.good;
 }
+
+// เตือนนั่งนาน = เชื่อมต่ออยู่ + นั่งถึงเวลาที่ตั้ง (และถ้าเคยกด "ยืดเส้นแล้ว" ต้องนั่งต่อถึงรอบใหม่ dismissedUntil)
+// ใช้ทั้งตอนวาดหน้าจอและตอนคำนวณสถานะให้วิดเจ็ตจากข้อมูลเข็มขัด (ตอนอยู่เบื้องหลัง) จึงได้ผลตรงกันเสมอ
+export function isSittingAlert({ isConnected, sittingTime, limitMinutes, dismissedUntil }) {
+  return isConnected && sittingTime >= limitMinutes && (dismissedUntil === null || sittingTime >= dismissedUntil);
+}

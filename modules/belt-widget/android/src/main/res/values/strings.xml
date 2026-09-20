@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="belt_widget_label">หลังเทพ</string>
-  <string name="belt_widget_description">คะแนนความพร้อมและสถานะเชื่อมต่อเข็มขัด</string>
-  <string name="belt_widget_open_app">เปิดแอปเพื่อดูคะแนน</string>
-  <string name="belt_widget_disconnected">● ยังไม่ได้เชื่อมต่อ</string>
-  <string name="belt_widget_connected">● เชื่อมต่อแล้ว</string>
+  <string name="belt_widget_description">สถานะท่านั่ง เวลานั่งต่อเนื่อง และคะแนนความพร้อม</string>
+  <string name="belt_widget_no_data">ไม่มีข้อมูล</string>
+  <string name="belt_widget_sitting">นั่งมาแล้ว %1$d นาที</string>
   <string name="belt_widget_updated_at">อัปเดต %1$s</string>
 </resources>

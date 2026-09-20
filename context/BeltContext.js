@@ -13,11 +13,12 @@ import {
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, sanitizeSettings } from '../utils/settings';
 import { applyDayScores, calculateWeeklyScore, computeWeekChange, getReadinessMessage } from '../utils/postureScore';
 import { getLocalDateKey } from '../utils/postureStats';
-import { getOverallStatus } from '../utils/overallStatus';
+import { getOverallStatus, isSittingAlert } from '../utils/overallStatus';
 import { elapsedSince } from '../utils/sittingClock';
 import { buildDailySummary, pickSummaryDay } from '../utils/dailySummary';
 import { loadPainLog, regionsOf, savePainLog, setNoPain, toggleRegion } from '../utils/painLog';
 import { isHomeWidgetAvailable, updateHomeWidget } from '../utils/homeWidget';
+import { buildWidgetState } from '../utils/widgetState';
 import { loadSummaryShownDate, saveSummaryShownDate } from '../utils/summaryState';
 import {
   isBackgroundServiceAvailable,
@@ -67,6 +68,7 @@ export function BeltProvider({ children }) {
   const sittingLastRef = useRef(null); // เวลา (ms) ที่นับล่าสุด; null = ตอนนี้ไม่ได้นับ (ไม่ได้เชื่อมต่อ/หยุดชั่วคราว)
   const lastFlushAtRef = useRef(0); // เวลา (ms) ที่เขียนข้อมูลท่านั่งลงเครื่องล่าสุดจากข้อมูลเข็มขัด
   const tickSittingClockRef = useRef(() => {}); // ให้ callback ของ Bluetooth (ผูกไว้ตอนเชื่อมต่อ) เรียกนับเวลานั่งได้
+  const sittingMinutesRef = useRef(0); // เวลานั่ง (นาที) ล่าสุดที่นับได้ — เขียนตอนนับเวลา ไม่ต้องรอ React วาดใหม่
   const [errorMsg, setErrorMsg] = useState(null);
   const connectedDeviceRef = useRef(null);
   const tiltSubscriptionRef = useRef(null);
@@ -74,6 +76,7 @@ export function BeltProvider({ children }) {
   const [tilt, setTilt] = useState(null); // { pitch, roll } หน่วยองศา
   const badPostureSinceRef = useRef(null); // เวลา (ms) ที่เริ่มนั่งท่าไม่ดีต่อเนื่อง
   const [postureAlert, setPostureAlert] = useState(null); // ข้อความท่าไม่ดี แยกจาก isAlert (เตือนนั่งนาน)
+  const postureAlertRef = useRef(null); // ค่าเดียวกับ postureAlert แต่อ่านได้ทันทีโดยไม่รอ React วาดใหม่
 
   // ข้อมูลจริงที่บันทึกจากเข็มขัด: weekData = 7 วันล่าสุด (ใช้คิดคะแนน), chartData = ช่วงที่เลือกดูในกราฟ
   const [weekData, setWeekData] = useState([]);
@@ -99,8 +102,7 @@ export function BeltProvider({ children }) {
   // จึงปรับค่าตอนกำลังนั่งอยู่แล้วมีผลทันที และหลุดการเชื่อมต่อ = เวลานั่งเป็น 0 = ไม่เตือน)
   // กด "ยืดเส้น/ลุกแล้ว" = ซ่อนเตือนจนกว่าจะนั่งต่ออีกครบเวลาที่ตั้ง (ไม่รีเซ็ตเวลานั่ง; เวลานั่งยังเดินต่อ) แล้วเตือนรอบใหม่
   const [alertDismissedUntil, setAlertDismissedUntil] = useState(null); // เวลานั่ง (นาที) ที่เตือนรอบใหม่จะกลับมา
-  const isAlert =
-    isConnected && sittingTime >= settings.sittingAlertMinutes && (alertDismissedUntil === null || sittingTime >= alertDismissedUntil);
+  const isAlert = isSittingAlert({ isConnected, sittingTime, limitMinutes: settings.sittingAlertMinutes, dismissedUntil: alertDismissedUntil });
 
   // จำนวนครั้งที่ลุกยืดเส้นต่อวัน (เก็บในเครื่อง)
   const [stretchLog, setStretchLog] = useState({});
@@ -139,6 +141,7 @@ export function BeltProvider({ children }) {
     sittingMsRef.current += elapsedSince(sittingLastRef.current, now);
     sittingLastRef.current = now;
     const minutes = Math.floor(sittingMsRef.current / 60000);
+    sittingMinutesRef.current = minutes; // ค่านี้ให้วิดเจ็ตอ่านตอนอยู่เบื้องหลังที่ React อาจยังไม่วาดใหม่
     setSittingTime((prev) => (prev === minutes ? prev : minutes));
   };
   tickSittingClockRef.current = tickSittingClock;
@@ -164,6 +167,7 @@ export function BeltProvider({ children }) {
   useEffect(() => {
     if (!isConnected) {
       sittingMsRef.current = 0;
+      sittingMinutesRef.current = 0;
       setSittingTime(0);
       setIsPaused(false);
       setAlertDismissedUntil(null); // เวลานั่งเริ่มใหม่ ไม่ต้องจำการกดยืดเส้นของรอบเก่า
@@ -230,18 +234,24 @@ export function BeltProvider({ children }) {
   // ---------- เตือนท่านั่งไม่ดี ----------
   // ผิดท่าต่อเนื่อง BAD_POSTURE_SECONDS วินาทีถึงจะเตือน; กลับมาท่าดีเมื่อไหร่เตือนหายและเริ่มนับใหม่
   // ตอนหยุดชั่วคราว (ลุกไปประชุม/กินข้าว) ไม่ตรวจท่านั่ง: ถือว่าไม่ได้นั่ง
-  useEffect(() => {
-    const status = getPostureStatus(isPaused ? null : tilt);
+  // evaluatePostureAlert ทำงานได้ทั้งจาก effect นี้ (ตอน React วาดใหม่) และจาก callback ข้อมูลเข็มขัดโดยตรง (ตอนอยู่เบื้องหลังที่ React อาจไม่ได้วาดใหม่)
+  // ผลเก็บใน postureAlertRef ให้วิดเจ็ตอ่านได้ทันที; คืนข้อความเตือนล่าสุด (null = ไม่เตือน)
+  const evaluatePostureAlert = (tiltValue, paused) => {
+    const status = getPostureStatus(paused ? null : tiltValue);
     if (!status.isBadPosture) {
       badPostureSinceRef.current = null;
-      setPostureAlert(null);
-      return;
+      postureAlertRef.current = null;
+      return null;
     }
     const now = Date.now();
     if (badPostureSinceRef.current === null) badPostureSinceRef.current = now;
     if (now - badPostureSinceRef.current >= BAD_POSTURE_SECONDS * 1000) {
-      setPostureAlert(status.label);
+      postureAlertRef.current = status.label;
     }
+    return postureAlertRef.current;
+  };
+  useEffect(() => {
+    setPostureAlert(evaluatePostureAlert(tilt, isPaused));
   }, [tilt, isPaused]);
 
   // ยิงแจ้งเตือนป๊อปอัพ "ครั้งเดียวต่อรอบ": ทำงานเฉพาะตอนสถานะเปลี่ยนจากไม่เตือน -> เตือน
@@ -403,7 +413,6 @@ export function BeltProvider({ children }) {
               const parsed = parseTiltPayload(characteristic?.value);
               if (parsed) {
                 setTilt(parsed);
-                pushWidgetRef.current(); // จังหวะส่งสถานะให้วิดเจ็ตซ้ำทุก ~5 นาที (ข้อมูลเข็มขัดมาแม้ตอนอยู่เบื้องหลัง)
                 // นับเวลาท่าดี/ไม่ดีลงบันทึกรายวัน (ข้ามตอนหยุดชั่วคราว: ไม่ได้นั่งอยู่ ไม่ให้ประวัติเพี้ยน)
                 if (!isPausedRef.current) {
                   recordPostureSample(getPostureStatus(parsed));
@@ -415,6 +424,10 @@ export function BeltProvider({ children }) {
                     flushPostureLog();
                   }
                 }
+                // ส่งสถานะให้วิดเจ็ตท้ายสุด (หลังนับเวลาแล้ว): ตอนอยู่เบื้องหลัง React อาจไม่วาดใหม่ จึงประเมินท่านั่งไม่ดีและคำนวณค่าที่ส่งจาก ref ตรงนี้เลย
+                // (evaluatePostureAlert ใช้แต่ ref และค่าคงที่ จึงเรียกจาก callback ที่ผูกไว้ตอนเชื่อมต่อได้อย่างปลอดภัย); ส่งเมื่อค่าเปลี่ยนหรือครบ ~5 นาที
+                evaluatePostureAlert(parsed, isPausedRef.current);
+                pushWidgetRef.current();
               }
             }
           );
@@ -441,26 +454,80 @@ export function BeltProvider({ children }) {
 
   const connectLabel = isConnecting ? 'กำลังเชื่อมต่อ...' : isConnected ? 'ตัดการเชื่อมต่อ' : 'เชื่อมต่อ Bluetooth';
 
+  // สถานะภาพรวมบน Home (เขียว/เหลือง/แดง/เทา) คำนวณจากสถานะที่มีอยู่แล้วทั้งหมด; ใช้กับวิดเจ็ตด้วย จึงคำนวณก่อนส่วนวิดเจ็ต
+  // nextAlertAt = เวลานั่ง (นาที) ที่จะเตือนนั่งนานครั้งถัดไป (ขยับเมื่อกด "ยืดเส้นแล้ว")
+  const nextAlertAt = alertDismissedUntil === null ? settings.sittingAlertMinutes : alertDismissedUntil;
+  const overallStatus = getOverallStatus({
+    isConnected,
+    isPaused,
+    postureAlert,
+    isAlert,
+    sittingTime,
+    nextAlertAt,
+    limitMinutes: settings.sittingAlertMinutes,
+  });
+
   // ---------- วิดเจ็ตหน้าจอหลัก ----------
-  // ส่งคะแนน + สถานะเชื่อมต่อไปให้วิดเจ็ตเมื่อค่าเปลี่ยน และซ้ำทุก WIDGET_HEARTBEAT_MS ตอนเชื่อมต่ออยู่ (จังหวะจากข้อมูลเข็มขัด ทำงานตอนอยู่เบื้องหลังด้วย)
+  // ส่งไปให้วิดเจ็ตจากจังหวะที่ทำงานตอนอยู่เบื้องหลังด้วย (ข้อมูลเข็มขัดทุก 1 วินาที)
   // ล้มเหลวเงียบๆ ได้: วิดเจ็ตเป็นส่วนเสริม ไม่กระทบแอปหลักและ background service
-  const widgetDataRef = useRef({ score: null, label: '', color: '#6B7280', connected: false });
+  // สิ่งที่วิดเจ็ตแสดง (สถานะท่านั่งตาม badge บน Home / เวลานั่ง / คะแนน) ตัดสินใจใน utils/widgetState.js จากสถานะที่แอปมีอยู่แล้ว ไม่คำนวณใหม่
+  // สำคัญ: ตอนอยู่เบื้องหลัง React อาจไม่ได้วาดใหม่/รัน effect เลย (ค่า state ที่วาดไว้จะเก่าค้าง) จึงห้ามพึ่งค่าจากการวาด
+  // ค่าที่ส่งให้วิดเจ็ตคำนวณจาก ref ทั้งหมดในจังหวะที่เรียก (ref เขียนตรงจากข้อมูลเข็มขัด/ตัวนับเวลา จึงสดเสมอ) ส่วนค่า state ที่วาดแล้วใช้เป็นแค่ตัวสั่งให้ส่ง
+  // ส่งเมื่อค่าเปลี่ยน (เวลานั่งเปลี่ยนทุกนาทีจึงส่งทุกนาทีตอนเชื่อมต่ออยู่) และซ้ำทุก WIDGET_HEARTBEAT_MS ถ้าค่าไม่เปลี่ยน (เช่น ตอนหยุดชั่วคราว)
+  const connectedRef = useRef(false);
+  connectedRef.current = isConnected;
+  const alertDismissedRef = useRef(null);
+  alertDismissedRef.current = alertDismissedUntil;
+  const scoreRef = useRef({ score: null, tierColor: readiness.color });
+  scoreRef.current = { score, tierColor: readiness.color };
+  const historyReadyRef = useRef(false);
+  historyReadyRef.current = historyReady;
   const widgetLastPushRef = useRef({ at: 0, key: '' });
   const pushWidgetRef = useRef(() => {});
+
+  // สถานะสำหรับวิดเจ็ตจาก ref ล้วน: ใช้ getOverallStatus / isSittingAlert ตัวเดียวกับหน้า Home
+  const computeWidgetState = () => {
+    const connected = connectedRef.current;
+    const paused = isPausedRef.current;
+    const minutes = sittingMinutesRef.current;
+    const limitMinutes = settingsRef.current.sittingAlertMinutes;
+    const dismissedUntil = alertDismissedRef.current;
+    const nextAlert = dismissedUntil === null ? limitMinutes : dismissedUntil;
+    const status = getOverallStatus({
+      isConnected: connected,
+      isPaused: paused,
+      postureAlert: postureAlertRef.current,
+      isAlert: isSittingAlert({ isConnected: connected, sittingTime: minutes, limitMinutes, dismissedUntil }),
+      sittingTime: minutes,
+      nextAlertAt: nextAlert,
+      limitMinutes,
+    });
+    return buildWidgetState({
+      overallStatus: status,
+      isConnected: connected,
+      isPaused: paused,
+      sittingTime: minutes,
+      nextAlertAt: nextAlert,
+      score: scoreRef.current.score,
+      tierColor: scoreRef.current.tierColor,
+    });
+  };
   const pushWidget = (force = false) => {
-    const d = widgetDataRef.current;
-    const key = `${d.score}|${d.label}|${d.color}|${d.connected}`;
+    if (!historyReadyRef.current) return; // ประวัติ/คะแนนยังโหลดไม่เสร็จ: คะแนนเป็น null ชั่วคราว ไม่ควรส่งไปทับค่าจริงของวิดเจ็ต
+    const state = computeWidgetState();
+    const key = JSON.stringify(state);
     const now = Date.now();
     const last = widgetLastPushRef.current;
     if (!force && key === last.key && now - last.at < WIDGET_HEARTBEAT_MS) return;
     widgetLastPushRef.current = { at: now, key };
-    updateHomeWidget({ score: d.score, tierLabel: d.label, tierColor: d.color, connected: d.connected }); // ไม่ต้องรอ และไม่โยน error
+    updateHomeWidget(state); // ไม่ต้องรอ และไม่โยน error
   };
-  widgetDataRef.current = { score, label: readiness.label, color: readiness.color, connected: isConnected };
   pushWidgetRef.current = pushWidget;
+  // สั่งให้ส่งเมื่อสิ่งที่วาดเปลี่ยน (ผู้ใช้กดปุ่ม/ตั้งค่า/เชื่อมต่อ/ประวัติโหลดเสร็จ) — ค่าจริงที่ส่งคำนวณใน pushWidget ไม่ใช่ค่าจากการวาดนี้
+  const widgetTriggerKey = `${historyReady}|${isConnected}|${isPaused}|${overallStatus.key}|${sittingTime}|${nextAlertAt}|${score}|${readiness.color}`;
   useEffect(() => {
-    if (historyReady) pushWidget();
-  }, [historyReady, score, readiness.label, isConnected]);
+    pushWidget();
+  }, [widgetTriggerKey]);
 
   // ---------- บันทึกอาการปวด (body map) ----------
   // เก็บแยกจาก self-report แบบอิโมจิเดิม (ไม่แตะของเดิม) รายวันตามวันที่จริง; ใช้ ref ให้การแตะรัวๆ ต่อกันได้ไม่ทับกัน
@@ -553,17 +620,6 @@ export function BeltProvider({ children }) {
     await saveSelfReport(todayKey, rating);
     await refreshHistory(); // self-report มีผลต่อคะแนนและกราฟ: คำนวณใหม่ทันที
   };
-
-  // สถานะภาพรวมบน Home (เขียว/เหลือง/แดง/เทา) คำนวณจากสถานะที่มีอยู่แล้วทั้งหมด (ประกาศ postureAlert แล้วตรงนี้)
-  const overallStatus = getOverallStatus({
-    isConnected,
-    isPaused,
-    postureAlert,
-    isAlert,
-    sittingTime,
-    nextAlertAt: alertDismissedUntil === null ? settings.sittingAlertMinutes : alertDismissedUntil,
-    limitMinutes: settings.sittingAlertMinutes,
-  });
 
   const value = {
     // Bluetooth
