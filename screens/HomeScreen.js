@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Activity, Bluetooth, CalendarDays, Clock, Flame, HeartPulse, Pause, Play } from 'lucide-react-native';
+import { Activity, Bluetooth, CalendarDays, ClipboardList, Clock, Flame, HeartPulse, Pause, Play } from 'lucide-react-native';
 import { APP_NAME_TH, APP_NAME_EN } from '../config';
 import { useBelt } from '../context/BeltContext';
 import { getRecommendedRoutine } from '../utils/postureScore';
@@ -32,6 +32,7 @@ export default function HomeScreen() {
     tilt,
     postureAlert,
     tier,
+    openDailySummary,
   } = useBelt();
   const theme = useTheme();
   const screen = useScreenStyles();
@@ -55,6 +56,11 @@ export default function HomeScreen() {
               {streak > 0 ? `ท่านั่งดีต่อเนื่อง ${streak} วันแล้ว 🔥` : 'เริ่มสะสมวันท่านั่งดีกันเลย! วันนี้นั่งให้ตรงๆ แล้วมาลุ้น streak แรกกัน 💪'}
             </Text>
           </View>
+          {/* สรุปผลของเมื่อวาน/วันล่าสุด (เด้งเองครั้งแรกของวัน กดดูเองได้ตรงนี้) */}
+          <BounceTouchable style={styles.summaryButton} onPress={openDailySummary} accessibilityLabel="ดูสรุปวันนี้">
+            <ClipboardList color={COLORS.blue} size={16} />
+            <Text style={styles.summaryButtonText}>ดูสรุปวันนี้</Text>
+          </BounceTouchable>
         </Card>
 
         {/* การเชื่อมต่อ */}
@@ -188,6 +194,8 @@ const makeStyles = (t) =>
     timerText: { fontSize: 36, fontWeight: 'bold', color: t.number, textAlign: 'center', marginVertical: 10 },
     streakRow: { flexDirection: 'row', alignItems: 'center' },
     streakText: { flex: 1, marginLeft: 12, fontSize: 17, fontWeight: '700', color: t.text },
+    summaryButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start', marginTop: 12, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, backgroundColor: t.selected },
+    summaryButtonText: { marginLeft: 6, fontSize: 13, fontWeight: '600', color: t.number },
     streakTextEmpty: { fontSize: 14, fontWeight: '500', color: t.muted },
     timerHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
     timerHeaderTitle: { flex: 1 },

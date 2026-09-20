@@ -14,6 +14,8 @@ import { applyDayScores, calculateWeeklyScore, computeWeekChange, getReadinessMe
 import { getLocalDateKey } from '../utils/postureStats';
 import { getOverallStatus } from '../utils/overallStatus';
 import { elapsedSince } from '../utils/sittingClock';
+import { buildDailySummary, pickSummaryDay } from '../utils/dailySummary';
+import { loadSummaryShownDate, saveSummaryShownDate } from '../utils/summaryState';
 import {
   isBackgroundServiceAvailable,
   isBackgroundServiceRunning,
@@ -308,6 +310,7 @@ export function BeltProvider({ children }) {
       } else {
         tickSittingClockRef.current();
         refreshHistory();
+        checkDailySummary();
       }
     });
     return () => sub.remove();
@@ -427,6 +430,51 @@ export function BeltProvider({ children }) {
 
   const connectLabel = isConnecting ? 'กำลังเชื่อมต่อ...' : isConnected ? 'ตัดการเชื่อมต่อ' : 'เชื่อมต่อ Bluetooth';
 
+  // ---------- สรุปวันนี้ ----------
+  // dailySummary = null (ปิดอยู่) | { data: สรุป | null (ยังไม่มีข้อมูล), auto: เด้งเอง? }
+  const [dailySummary, setDailySummary] = useState(null);
+  const summaryCheckedDayRef = useRef(null); // วันที่ (dateKey) ที่ตรวจว่าจะเด้งสรุปอัตโนมัติไปแล้วในรอบการใช้งานนี้ (กันตรวจ/เด้งซ้ำ)
+  // โหลดข้อมูลสรุปของ "เมื่อวานหรือวันล่าสุดที่มีข้อมูล" (ย้อนดูได้ 30 วัน) จากข้อมูลที่เก็บไว้ทั้งหมด ไม่มีข้อมูลใหม่
+  const loadDailySummaryData = async () => {
+    const todayK = getLocalDateKey();
+    const selfReports = await getSelfReportLog();
+    const series = applyDayScores(await loadSeries('30d'), selfReports); // คะแนนวันนั้นหักตาม self-report เหมือนกราฟ
+    const bucket = pickSummaryDay(series, todayK);
+    if (!bucket) return null;
+    const latestStreak = await loadStreak(); // streak ปัจจุบันจริง (ไม่ใช้ค่าในสถานะที่อาจยังโหลดไม่เสร็จตอนเปิดแอป)
+    if (stretchLoadRef.current) await stretchLoadRef.current;
+    return buildDailySummary({ bucket, streak: latestStreak, stretchCount: stretchLogRef.current[bucket.dateKey] || 0, todayKey: todayK });
+  };
+  // เด้งสรุปอัตโนมัติ "ครั้งแรกของวัน" เท่านั้น: จำวันที่ที่เด้งไปแล้วไว้ในเครื่อง; ไม่มีข้อมูลก็ไม่เด้ง
+  const checkDailySummary = async () => {
+    const today = getLocalDateKey();
+    if (summaryCheckedDayRef.current === today) return;
+    summaryCheckedDayRef.current = today;
+    try {
+      if ((await loadSummaryShownDate()) === today) return;
+      const data = await loadDailySummaryData();
+      if (!data) return;
+      await saveSummaryShownDate(today); // จำก่อนแสดง: ถ้าแอปปิดกลางคัน ไม่เด้งซ้ำทั้งวัน
+      setDailySummary({ data, auto: true });
+    } catch (e) {
+      console.log('ตรวจสรุปวันนี้ไม่สำเร็จ', e);
+    }
+  };
+  // กดดูเองจากหน้า Home (ไม่นับเป็นการเด้งอัตโนมัติ และแสดงข้อความ "ยังไม่มีข้อมูล" ถ้าไม่มี)
+  const openDailySummary = async () => {
+    try {
+      setDailySummary({ data: await loadDailySummaryData(), auto: false });
+    } catch (e) {
+      setDailySummary({ data: null, auto: false });
+    }
+  };
+  const closeDailySummary = () => setDailySummary(null);
+
+  // โหลดการตั้งค่าเสร็จ (เปิดแอป) แล้วตรวจสรุปครั้งแรกของวัน
+  useEffect(() => {
+    if (settingsReady) checkDailySummary();
+  }, [settingsReady]);
+
   // ---------- ล้างข้อมูลทั้งหมด ----------
   // ลบทุกอย่างที่เก็บในเครื่อง แล้วรีเซ็ตสถานะในหน่วยความจำให้เป็นค่าเริ่มต้น
   // ไม่แตะ Bluetooth: ยังเชื่อมต่อต่อได้ และตัวจับเวลานั่งที่กำลังเดินอยู่ก็เดินต่อ (ไม่ใช่ข้อมูลที่เก็บไว้) ข้อมูลที่เข็มขัดส่งมาหลังจากนี้จะเริ่มบันทึกใหม่
@@ -440,6 +488,8 @@ export function BeltProvider({ children }) {
     stretchLoadRef.current = null;
     setStretchLog({});
     celebrationRef.current = null; // baseline streak เริ่มใหม่ (ไม่ฉลองจากข้อมูลที่เพิ่งล้าง)
+    summaryCheckedDayRef.current = null;
+    setDailySummary(null);
     celebrationLoadRef.current = null;
     chartRangeRef.current = '7d';
     setChartRange('7d');
@@ -491,6 +541,9 @@ export function BeltProvider({ children }) {
     backgroundServiceAvailable: isBackgroundServiceAvailable(),
     openBatterySettings: openBatterySettingsNative,
     clearAllData,
+    dailySummary,
+    openDailySummary,
+    closeDailySummary,
     // ประวัติ + คะแนน
     streak,
     confettiKey,

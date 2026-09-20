@@ -93,7 +93,8 @@ function monthToDate(today) {
 function daysOfRange(range, today) {
   if (range === '1d') return [today];
   if (range === '7d') return lastNDays(today, 7);
-  if (range === 'prev7d') return lastNDays(addDays(today, -7), 7); // 7 วันก่อนหน้าช่วง 7d (ใช้เทียบกับสัปดาห์ก่อน)
+  if (range === 'prev7d') return lastNDays(addDays(today, -7), 7);
+  if (range === '30d') return lastNDays(today, 30); // ใช้หาวันล่าสุดที่มีข้อมูลสำหรับหน้าสรุปวันนี้ // 7 วันก่อนหน้าช่วง 7d (ใช้เทียบกับสัปดาห์ก่อน)
   if (range === 'mtd') return monthToDate(today);
   return [];
 }
@@ -107,7 +108,7 @@ export function buildSeries(range, recordsByKey, today = new Date()) {
   const days = daysOfRange(range, today);
   if (range === '1d') return [summarize('วันนี้', [getLocalDateKey(today)], recordsByKey)];
   if (range === '7d' || range === 'prev7d') return days.map((d) => summarize(THAI_WEEKDAYS[d.getDay()], [getLocalDateKey(d)], recordsByKey));
-  if (range === 'mtd') return days.map((d) => summarize(String(d.getDate()), [getLocalDateKey(d)], recordsByKey));
+  if (range === 'mtd' || range === '30d') return days.map((d) => summarize(String(d.getDate()), [getLocalDateKey(d)], recordsByKey));
   return [];
 }
 

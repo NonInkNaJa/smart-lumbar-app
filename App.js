@@ -8,6 +8,7 @@ import { BeltProvider, useBelt } from './context/BeltContext';
 import { IconBadge, COLORS } from './components/ui';
 import { useTheme } from './components/theme';
 import { StreakConfetti } from './components/StreakConfetti';
+import { DailySummaryModal } from './components/DailySummaryModal';
 import HomeScreen from './screens/HomeScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import SettingsScreen from './screens/SettingsScreen';
@@ -60,6 +61,8 @@ function AppShell() {
       </NavigationContainer>
       {/* ชั้นฉลอง streak วางทับทุกหน้า */}
       <StreakConfetti />
+      {/* สรุปวันนี้: เด้งครั้งแรกของวัน หรือกดดูจากหน้า Home */}
+      <DailySummaryModal />
     </>
   );
 }
